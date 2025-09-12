@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import BackButton from "../components/BackButton.jsx";
 import { getLiveEvent } from "../services/api.js";
 
@@ -166,6 +167,14 @@ export default function TCGLiveLogDetail(){
 
   const toneForTurn = (player) => (String(player||"").toLowerCase().includes(String(youName).toLowerCase())) ? "you" : "opp";
 
+  const handleEdit = () => {
+    console.log("Edit event", logId);
+  };
+
+  const handleDelete = () => {
+    console.log("Delete event", logId);
+  };
+
   if (!ev && loading) {
     return <div className="max-w-5xl mx-auto px-4 py-6 text-zinc-400">Carregando evento…</div>;
   }
@@ -192,16 +201,37 @@ export default function TCGLiveLogDetail(){
 
         {/* Exportar .txt do log bruto */}
         {ev?.rawLog && (
-          <button
-            onClick={()=>{
-              const blob = new Blob([ev.rawLog], { type: "text/plain;charset=utf-8" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a"); a.href = url; a.download = `evento-${logId}.txt`; a.click(); URL.revokeObjectURL(url);
-            }}
-            className="px-3 py-1.5 rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-200 text-sm hover:bg-zinc-800"
-          >
-            Exportar .txt
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleEdit}
+              className="px-3 py-1.5 rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800"
+              aria-label="Editar"
+            >
+              <Pencil className="w-4 h-4" />
+            </button>
+            <button
+              onClick={handleDelete}
+              className="px-3 py-1.5 rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800"
+              aria-label="Excluir"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                const blob = new Blob([ev.rawLog], { type: "text/plain;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `evento-${logId}.txt`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="px-3 py-1.5 rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-200 text-sm hover:bg-zinc-800"
+              aria-label="Exportar log"
+            >
+              Exportar .txt
+            </button>
+          </div>
         )}
       </div>
 
