@@ -353,7 +353,31 @@ export default function TCGLivePage() {
                 <tr key={i}>
                   <td className="py-2"><a className="hover:underline" href={`#/tcg-live/datas/${log.dateISO || ""}`}>{(log.dateISO || "").split("-").reverse().join("/")}</a></td>
                   <td>{log.playerDeck || log.deckName || "—"}</td>
-                  <td>{(() => { const tName = log.tournamentName || log.tournament || log.tournament_name || ""; const tId = log.tournamentId || log.tId || ""; return tName ? (<a href={tId ? `#/tcg-live/torneios/${tId}` : "#/tcg-live/torneios"} className="hover:underline">{tName}</a>) : ("-"); })()}</td>
+                  <td>{(() => {
+                    const tName =
+                      log.tournamentName ||
+                      log.tournament ||
+                      log.tournament_name ||
+                      log.tourneyName ||
+                      log.event ||
+                      "";
+                    const tId =
+                      log.tournamentId ||
+                      log.tId ||
+                      log.tournament_id ||
+                      log.id ||
+                      "";
+                    return tName ? (
+                      <a
+                        href={tId ? `#/tcg-live/torneios/${tId}` : "#/tcg-live/torneios"}
+                        className="hover:underline"
+                      >
+                        {tName}
+                      </a>
+                    ) : (
+                      "-"
+                    );
+                  })()}</td>
                   <td className={`text-center font-bold ${log.result === 'W' ? 'text-green-400' : log.result === 'L' ? 'text-rose-400' : 'text-zinc-300'}`}>{log.result || "-"}</td>
                 </tr>
               ))}
