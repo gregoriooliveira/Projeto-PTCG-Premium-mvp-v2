@@ -1,4 +1,4 @@
-import { getCsrfToken } from "./utils/csrf.js";
+import { api } from "./services/api.js";
 
 const API_BASE = '/api/events';
 
@@ -25,11 +25,7 @@ async function migrateLegacy() {
 export async function getAllEvents() {
   await migrateLegacy();
   try {
-    const res = await fetch(API_BASE, {
-      credentials: 'include',
-    });
-    if (!res.ok) throw new Error('fail');
-    return await res.json();
+    return await api(API_BASE);
   } catch (err) {
     console.warn('Falha ao carregar eventos', err);
     return [];
@@ -38,11 +34,7 @@ export async function getAllEvents() {
 
 export async function getEvent(id) {
   try {
-    const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}`, {
-      credentials: 'include',
-    });
-    if (!res.ok) return null;
-    return await res.json();
+    return await api(`${API_BASE}/${encodeURIComponent(id)}`);
   } catch (err) {
     console.warn('Falha ao obter evento', err);
     return null;
@@ -51,17 +43,7 @@ export async function getEvent(id) {
 
 export async function createEvent(ev) {
   try {
-    const res = await fetch(API_BASE, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': getCsrfToken(),
-      },
-      body: JSON.stringify(ev),
-    });
-    if (!res.ok) throw new Error('fail');
-    return await res.json();
+    return await api(API_BASE, { method: 'POST', body: JSON.stringify(ev) });
   } catch (err) {
     console.warn('Falha ao salvar evento', err);
     throw err;
@@ -70,17 +52,7 @@ export async function createEvent(ev) {
 
 export async function updateEvent(id, patch) {
   try {
-    const res = await fetch(`${API_BASE}/${encodeURIComponent(id)}`, {
-      method: 'PUT',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRF-Token': getCsrfToken(),
-      },
-      body: JSON.stringify(patch),
-    });
-    if (!res.ok) throw new Error('fail');
-    return await res.json();
+    return await api(`${API_BASE}/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(patch) });
   } catch (err) {
     console.warn('Falha ao atualizar evento', err);
     return null;
