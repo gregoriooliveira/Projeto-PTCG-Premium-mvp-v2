@@ -100,6 +100,7 @@ r.post("/import-logs/commit", async (req, res) => {
     const date = new Date(now).toISOString().slice(0,10);
 
     const rawLog = String(body.rawLog || "");
+    if (!rawLog) return res.status(400).json({ error: "missing_raw_log" });
     const hash = sha256(rawLog);
 
     const players = body.players || {};
@@ -180,5 +181,3 @@ r.post("/import-logs/commit", async (req, res) => {
 });
 
 export default r;
-
-r.post("/commit", (req,res)=>{ const b=req.body||{}; if(!b.deckName||!String(b.deckName).trim()) return res.status(400).json({ ok:false, error:"deckName obrigatório" }); return res.json({ ok:true, id: "evt_"+Date.now().toString(36), matchId: "evt_"+Date.now().toString(36) }); });
