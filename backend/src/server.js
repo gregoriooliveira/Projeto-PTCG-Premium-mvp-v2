@@ -10,15 +10,45 @@ const app = express();
 import fs from "fs"; import path from "path";
 const _logsDir = path.resolve(process.cwd(), "logs");
 try{ if (!fs.existsSync(_logsDir)) fs.mkdirSync(_logsDir, { recursive:true }); }catch{}
-const _reqLog = fs.createWriteStream(path.join(_logsDir, "requests.ndjson"), { flags:"a" });
-const _resLog = fs.createWriteStream(path.join(_logsDir, "responses.ndjson"), { flags:"a" });
+
+// simple size-based log rotation
+const MAX_LOG_BYTES = 5 * 1024 * 1024; // 5MB
+function createRotatingStream(file){
+  let stream = fs.createWriteStream(file, { flags:"a" });
+  return {
+    write(str){
+      try{
+        stream.write(str);
+        const { size } = fs.statSync(file);
+        if(size >= MAX_LOG_BYTES){
+          stream.end();
+          const ts = new Date().toISOString().replace(/[:.]/g,"-");
+          fs.renameSync(file, `${file}.${ts}`);
+          stream = fs.createWriteStream(file, { flags:"a" });
+        }
+      }catch{}
+    }
+  };
+}
+
+const _reqLog = createRotatingStream(path.join(_logsDir, "requests.ndjson"));
+const _resLog = createRotatingStream(path.join(_logsDir, "responses.ndjson"));
+
 app.use((req, res, next) => {
   const start = Date.now();
-  try{ _reqLog.write(JSON.stringify({ ts:new Date().toISOString(), method:req.method, url:req.originalUrl, headers:req.headers })+"\n"); }catch{}
+
+  // sanitize sensitive headers
+  const headers = { ...req.headers };
+  if (headers.authorization) headers.authorization = "[REDACTED]";
+  if (headers.cookie) headers.cookie = "[REDACTED]";
+  try{ _reqLog.write(JSON.stringify({ ts:new Date().toISOString(), method:req.method, url:req.originalUrl, headers })+"\n"); }catch{}
+
   const _json = res.json.bind(res);
   res.json = (payload) => {
     const ms = Date.now() - start;
-    try{ _resLog.write(JSON.stringify({ ts:new Date().toISOString(), method:req.method, url:req.originalUrl, status: res.statusCode, ms, payload })+"\n"); }catch{}
+    let payloadSize = 0;
+    try { payloadSize = JSON.stringify(payload).length; } catch {}
+    try{ _resLog.write(JSON.stringify({ ts:new Date().toISOString(), method:req.method, url:req.originalUrl, status: res.statusCode, ms, payloadSize })+"\n"); }catch{}
     return _json(payload);
   };
   next();
