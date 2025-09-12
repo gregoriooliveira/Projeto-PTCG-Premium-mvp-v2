@@ -13,7 +13,10 @@
    FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
    GOOGLE_CLOUD_PROJECT=ptcg-premium-dev
    TZ=America/Sao_Paulo
+   CORS_ORIGIN=http://localhost:5173
    ```
+
+   `CORS_ORIGIN` define a origem permitida pelo CORS (padrão acima é seguro para desenvolvimento).
 
 3. Instale deps e suba a API:
    ```bash
