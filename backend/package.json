@@ -1,0 +1,17 @@
+{
+  "name": "ptcg-backend-live",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --env-file=.env src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "firebase-admin": "^12.6.0",
+    "nanoid": "^5.0.7",
+    "node-fetch": "^3.3.2"
+  }
+}

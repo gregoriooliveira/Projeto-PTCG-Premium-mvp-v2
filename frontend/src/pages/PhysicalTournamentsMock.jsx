@@ -1,0 +1,14 @@
+import React from "react";
+import BackButton from "../components/BackButton.jsx";
+export default function PhysicalTournamentsMock() {
+  return (
+    <div className="p-4 md:p-6 max-w-6xl mx-auto text-zinc-100">
+      <div className="mb-2"><BackButton href="#/tcg-fisico" label="Voltar ao TCG Físico" /></div>
+      <h1 className="text-2xl md:text-3xl font-semibold mb-2">Torneios (Físico)</h1>
+      <p className="text-zinc-400 mb-4 text-sm">Integração com registros físicos ainda não implementada neste build.</p>
+      <div className="rounded-2xl bg-zinc-900/70 border border-zinc-800 shadow-lg p-4 text-zinc-400">
+        Nenhum torneio ainda.
+      </div>
+    </div>
+  );
+}

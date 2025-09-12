@@ -1,0 +1,6 @@
+// Dentro de App.jsx - exemplo de rota manual
+import TCGLivePage from "./pages/TCGLivePage";
+
+if (hashParts[1] === "tcg-live") {
+  PageComponent = TCGLivePage;
+}

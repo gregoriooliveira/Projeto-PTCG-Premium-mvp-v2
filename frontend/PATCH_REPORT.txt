@@ -1,0 +1,56 @@
+# PATCH REPORT — 2025-09-02
+
+## Alterações Aplicadas
+- **Novas Páginas de Decks**
+  - Criado `src/pages/DecksLivePage.jsx` baseado no template do Canvas (`preview_v_2_decks_tcg_live_card_unico_resumo.jsx`).
+  - Exporta `DecksTCGLivePage` (default) e `DecksTCGFisicoPage` (nomeado).
+
+- **Rotas**
+  - Em `src/App.jsx`, adicionadas rotas:
+    - `#/tcg-live/decks` → `DecksTCGLivePage`
+    - `#/tcg-fisico/decks` → `DecksTCGFisicoPage`
+
+- **Ajustes no TCG Live**
+  - Em `src/pages/TCGLivePage.jsx`: título "Top 5 Decks por Win Rate" agora é link para `#/tcg-live/decks`.
+
+- **Ajustes no TCG Físico**
+  - Em `src/PhysicalPageV2.jsx`: coluna direita do Resumo Geral alterada de placeholder "—" para botão/link "Top Deck" que navega para `#/tcg-fisico/decks`.
+
+## Observações
+- Dados de Decks são **mock** para validação de layout. Integração futura precisará conectar com dados reais.
+- Regras de cálculo (Win Rate, pontos) já documentadas no template do Canvas foram preservadas.
+
+=== PATCH 2025-09-02 — Padronização Widget Resumo Geral ===
+
+1) Novo componente:
+   - [ADD] src/components/widgets/ResumoGeralWidget.jsx
+
+2) Alterações de páginas:
+   - [MOD] src/pages/TCGLivePage.jsx
+         > Importado ResumoGeralWidget; substituído bloco antigo por:
+             <ResumoGeralWidget title="TCG Live" variant="live" ... />
+   - [MOD] src/PhysicalPageV2.jsx
+         > Importado ResumoGeralWidget; injetado no início do conteúdo:
+             <ResumoGeralWidget title="TCG Físico" variant="fisico" ... />
+         > Observação: somente aqui o Top Deck é hyperlink.
+   - [MOD] src/pages/TCGLiveDatePage.jsx
+         > Importado ResumoGeralWidget; injetado no topo:
+             <ResumoGeralWidget title="Datas do TCG Live" variant="datasLive" ... />
+
+3) UX/Padronização:
+   - Win Rate à esquerda; métrica central por variante; Top Deck à direita.
+   - Removido underline/efeito de link nas variantes que **não** possuem hyperlink.
+   - Mantidos ícones e esquema dark (zinc).
+
+4) Compatibilidade:
+   - Nenhum pacote novo; apenas JSX/Tailwind.
+   - Usando assets existentes em /public/assets/icons (gardevoir, mewtwo, eevee, dragapult).
+   - Build esperado sem warnings adicionais.
+
+5) Itens pendentes:
+   - Integrar dados reais (WR, contadores, top deck) quando os seletores/serviços estiverem prontos.
+   - Remover widgets antigos duplicados quando confirmarmos a renderização final nas páginas.
+
+===============================================================
+
+[2025-09-02] Fix import path error by adding src/components/ImportLogsModal.jsx. Removed husky prepare, added eslint.config.js (ESLint 9 flat config).
