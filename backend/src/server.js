@@ -16,21 +16,27 @@ try{ if (!fs.existsSync(_logsDir)) fs.mkdirSync(_logsDir, { recursive:true }); }
 
 // simple size-based log rotation
 const MAX_LOG_BYTES = 5 * 1024 * 1024; // 5MB
-function createRotatingStream(file){
-  let stream = fs.createWriteStream(file, { flags:"a" });
-  return {
-    write(str){
-      try{
-        stream.write(str);
-        const { size } = fs.statSync(file);
-        if(size >= MAX_LOG_BYTES){
-          stream.end();
-          const ts = new Date().toISOString().replace(/[:.]/g,"-");
-          fs.renameSync(file, `${file}.${ts}`);
-          stream = fs.createWriteStream(file, { flags:"a" });
-        }
-      }catch{}
+function createRotatingStream(file) {
+  let stream = fs.createWriteStream(file, { flags: "a" });
+  async function rotateIfNeeded() {
+    try {
+      const { size } = await fs.promises.stat(file);
+      if (size >= MAX_LOG_BYTES) {
+        stream.end();
+        const ts = new Date().toISOString().replace(/[:.]/g, "-");
+        await fs.promises.rename(file, `${file}.${ts}`);
+        stream = fs.createWriteStream(file, { flags: "a" });
+      }
+    } catch {
+      // ignore rotation errors
     }
+  }
+  return {
+    write(str) {
+      stream.write(str, (err) => {
+        if (!err) rotateIfNeeded();
+      });
+    },
   };
 }
 
