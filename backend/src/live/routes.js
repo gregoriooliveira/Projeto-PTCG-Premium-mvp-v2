@@ -71,7 +71,10 @@ r.get("/events/:id", async (req, res) => {
   return res.json({ ...ev, rawLog });
 });
 
-/** Update event */
+/**
+ * Update event
+ * Accepts deckName, opponentDeck, you, opponent, round, placement, pokemons and result fields
+ */
 r.patch("/events/:id", authMiddleware, async (req, res) => {
   const id = req.params.id;
   const ds = await db.collection("liveEvents").doc(id).get();
@@ -80,6 +83,8 @@ r.patch("/events/:id", authMiddleware, async (req, res) => {
   const update = {};
   if ("deckName" in req.body) { update.deckName = normalizeName(req.body.deckName); update.playerDeckKey = normalizeDeckKey(update.deckName); }
   if ("opponentDeck" in req.body) { update.opponentDeck = normalizeName(req.body.opponentDeck); update.opponentDeckKey = normalizeDeckKey(update.opponentDeck); }
+  if ("you" in req.body) update.you = normalizeName(req.body.you);
+  if ("opponent" in req.body) update.opponent = normalizeName(req.body.opponent);
   if ("round" in req.body) update.round = req.body.round;
   if ("placement" in req.body) update.placement = req.body.placement;
   if ("pokemons" in req.body) update.pokemons = Array.isArray(req.body.pokemons) ? req.body.pokemons.slice(0,2) : [];
