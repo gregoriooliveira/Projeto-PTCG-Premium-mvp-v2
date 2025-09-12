@@ -5,7 +5,8 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "node --env-file=.env src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "loadtest": "node src/live/load.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -110,18 +110,24 @@ r.delete("/events/:id", authMiddleware, async (req, res) => {
 /** List recent events for widgets */
 r.get("/events", async (req, res) => {
   try {
-    const limit = Math.max(1, Math.min( Number(req.query.limit || 10), 200 ));
-    const snap = await db.collection("liveEvents").get();
-    const arr = snap.docs.map(d => d.data()).sort((a,b) => (b.createdAt||0) - (a.createdAt||0)).slice(0, limit);
-    const out = arr.map(ev => ({
-      eventId: ev.eventId,
-      dateISO: ev.date || ev.dateISO,
-      result: ev.result || null,
-      playerDeck: ev.deckName || null,
-      opponentDeck: ev.opponentDeck || null,
-      userPokemons: ev.pokemons || ev.userPokemons || null,
-      opponentPokemons: ev.opponentPokemons || null
-    }));
+    const limit = Math.max(1, Math.min(Number(req.query.limit || 10), 200));
+    const snap = await db
+      .collection("liveEvents")
+      .orderBy("createdAt", "desc")
+      .limit(limit)
+      .get();
+    const out = snap.docs.map(d => {
+      const ev = d.data();
+      return {
+        eventId: ev.eventId,
+        dateISO: ev.date || ev.dateISO,
+        result: ev.result || null,
+        playerDeck: ev.deckName || null,
+        opponentDeck: ev.opponentDeck || null,
+        userPokemons: ev.pokemons || ev.userPokemons || null,
+        opponentPokemons: ev.opponentPokemons || null
+      };
+    });
     res.json(out);
   } catch (e) {
     console.error("[GET /live/events]", e);
@@ -131,44 +137,91 @@ r.get("/events", async (req, res) => {
 r.get("/summary", async (req, res) => {
   const limitDays = Number(req.query.limitDays || 5);
 
-  // Total counts
-  const allSnap = await db.collection("liveEvents").get();
-  let totals = { W:0,L:0,T:0 };
-  const recentLogs = [];
-  const eventsSorted = allSnap.docs.map(d=>d.data()).sort((a,b)=>b.createdAt-a.createdAt);
-  for (const ev of eventsSorted) {
-    totals = countsAdd(totals, countsOfResult(ev.result));
-  }
-  for (const ev of eventsSorted.slice(0, 10)) {
-    recentLogs.push({
-      eventId: ev.eventId, dateISO: ev.date, result: ev.result,
-      playerDeck: ev.deckName, opponentDeck: ev.opponentDeck,
+  // Total counts based on aggregated days
+  const totalsSnap = await db
+    .collection("liveDays")
+    .orderBy("date", "desc")
+    .limit(limitDays)
+    .get();
+  let totals = { W: 0, L: 0, T: 0 };
+  totalsSnap.forEach(d => {
+    totals = countsAdd(totals, d.data().counts || {});
+  });
+
+  // Recent logs
+  const recentSnap = await db
+    .collection("liveEvents")
+    .orderBy("createdAt", "desc")
+    .limit(10)
+    .get();
+  const recentLogs = recentSnap.docs.map(d => {
+    const ev = d.data();
+    return {
+      eventId: ev.eventId,
+      dateISO: ev.date,
+      result: ev.result,
+      playerDeck: ev.deckName,
+      opponentDeck: ev.opponentDeck,
       userPokemons: ev.pokemons || ev.userPokemons || null,
       opponentPokemons: ev.opponentPokemons || null
-    });
-  }
+    };
+  });
 
   // Last N days
-  const daysSnap = await db.collection("liveDays").orderBy("date","desc").limit(limitDays).get();
-  const lastDays = daysSnap.docs.map(d=>d.data());
+  const daysSnap = await db
+    .collection("liveDays")
+    .orderBy("date", "desc")
+    .limit(limitDays)
+    .get();
+  const lastDays = daysSnap.docs.map(d => d.data());
 
   // Top decks
-  const decksSnap = await db.collection("liveDecksAgg").get();
-  const decks = decksSnap.docs.map(d=>d.data()).map(d => ({
-    deckKey: d.deckKey, counts: d.counts, wr: d.wr, avatars: (d.pokemons||[])
-  })).sort((a,b)=> (b.wr - a.wr)).slice(0,5);
+  const decksSnap = await db
+    .collection("liveDecksAgg")
+    .orderBy("wr", "desc")
+    .limit(5)
+    .get();
+  const decks = decksSnap.docs.map(d => {
+    const x = d.data();
+    return {
+      deckKey: x.deckKey,
+      counts: x.counts,
+      wr: x.wr,
+      avatars: x.pokemons || []
+    };
+  });
 
   // Top opponents
-  const oppSnap = await db.collection("liveOpponentsAgg").get();
-  const topOpponents = oppSnap.docs.map(d=>d.data()).map(d => ({
-    opponentName: d.opponentName, counts: d.counts, wr: d.wr, topDeck: d.topDeckKey ? { deckKey: d.topDeckKey } : null
-  })).sort((a,b)=> ((b.counts?.W||0+b.counts?.L||0+b.counts?.T||0) - (a.counts?.W||0+a.counts?.L||0+a.counts?.T||0))).slice(0,5);
+  const oppSnap = await db
+    .collection("liveOpponentsAgg")
+    .orderBy("total", "desc")
+    .limit(5)
+    .get();
+  const topOpponents = oppSnap.docs.map(d => {
+    const x = d.data();
+    return {
+      opponentName: x.opponentName,
+      counts: x.counts,
+      wr: x.wr,
+      topDeck: x.topDeckKey ? { deckKey: x.topDeckKey } : null
+    };
+  });
 
   // Recent tournaments
-  const tourSnap = await db.collection("liveTournamentsAgg").orderBy("dateISO","desc").limit(5).get();
-  const recentTournaments = tourSnap.docs.map(d=>d.data());
+  const tourSnap = await db
+    .collection("liveTournamentsAgg")
+    .orderBy("dateISO", "desc")
+    .limit(5)
+    .get();
+  const recentTournaments = tourSnap.docs.map(d => d.data());
 
-  const summary = { counts: { ...totals, total: totals.W+totals.L+totals.T }, wr: wrPercent(totals), topDeck: decks[0] ? { deckKey: decks[0].deckKey, wr: decks[0].wr, avatars: decks[0].avatars } : null };
+  const summary = {
+    counts: { ...totals, total: totals.W + totals.L + totals.T },
+    wr: wrPercent(totals),
+    topDeck: decks[0]
+      ? { deckKey: decks[0].deckKey, wr: decks[0].wr, avatars: decks[0].avatars }
+      : null
+  };
 
   res.json({ summary, lastDays, topDecks: decks, topOpponents, recentTournaments, recentLogs });
 });
@@ -176,7 +229,12 @@ r.get("/summary", async (req, res) => {
 /** Day details */
 r.get("/days/:date", async (req, res) => {
   const date = req.params.date;
-  const snap = await db.collection("liveEvents").where("date","==", date).orderBy("createdAt","desc").get();
+  const snap = await db
+    .collection("liveEvents")
+    .where("date", "==", date)
+    .orderBy("createdAt", "desc")
+    .limit(200)
+    .get();
   const events = snap.docs.map(d => {
   const ev = d.data();
   return {
@@ -207,16 +265,34 @@ r.get("/decks", async (req, res) => {
     const d = doc.data();
     return res.json([{ deck: d.deckKey, v: d.counts.W, d: d.counts.L, e: d.counts.T, pokemons: d.pokemons||[], wr: d.wr, total: (d.counts.W+d.counts.L+d.counts.T) }]);
   }
-  const snap = await db.collection("liveDecksAgg").get();
-  const out = snap.docs.map(x => x.data()).map(d => ({ deck: d.deckKey, v: d.counts.W, d: d.counts.L, e: d.counts.T, pokemons: d.pokemons||[], wr: d.wr, total: (d.counts.W+d.counts.L+d.counts.T) }));
+  const snap = await db
+    .collection("liveDecksAgg")
+    .orderBy("wr", "desc")
+    .limit(50)
+    .get();
+  const out = snap.docs
+    .map(x => x.data())
+    .map(d => ({
+      deck: d.deckKey,
+      v: d.counts.W,
+      d: d.counts.L,
+      e: d.counts.T,
+      pokemons: d.pokemons || [],
+      wr: d.wr,
+      total: d.counts.W + d.counts.L + d.counts.T
+    }));
   res.json(out);
 });
 
 /** Tournaments list */
 r.get("/tournaments", async (req, res) => {
   const q = (req.query.query || "").toString().toLowerCase();
-  const snap = await db.collection("liveTournamentsAgg").get();
-  let arr = snap.docs.map(d=>d.data());
+  const snap = await db
+    .collection("liveTournamentsAgg")
+    .orderBy("dateISO", "desc")
+    .limit(50)
+    .get();
+  let arr = snap.docs.map(d => d.data());
   if (q) arr = arr.filter(t => (t.name||"").toLowerCase().includes(q) || (t.tournamentId||"").toLowerCase().includes(q));
   // Sort by date desc
   arr.sort((a,b)=> String(b.dateISO).localeCompare(String(a.dateISO)));
@@ -227,8 +303,12 @@ r.get("/tournaments", async (req, res) => {
 r.get("/tournaments/suggest", async (req, res) => {
   try {
     const q = (req.query.q || "").toString().toLowerCase();
-    const snap = await db.collection("liveTournamentsAgg").get();
-    let arr = snap.docs.map(d=>d.data());
+    const snap = await db
+      .collection("liveTournamentsAgg")
+      .orderBy("dateISO", "desc")
+      .limit(50)
+      .get();
+    let arr = snap.docs.map(d => d.data());
     if (q) {
       arr = arr.filter(t =>
         String(t.name||"").toLowerCase().includes(q) ||
@@ -256,7 +336,7 @@ r.get("/tournaments/:id", async (req, res) => {
   const id = req.params.id;
   const baseDoc = await db.collection("liveTournamentsAgg").doc(id).get();
   const tournament = baseDoc.exists ? baseDoc.data() : { tournamentId: id };
-  const snap = await db.collection("liveEvents").where("tournamentId","==", id).orderBy("round").get();
+  const snap = await db.collection("liveEvents").where("tournamentId","==", id).orderBy("round").limit(200).get();
   const rounds = snap.docs.map(d => {
     const ev = d.data();
     return {
@@ -271,7 +351,11 @@ r.get("/tournaments/:id", async (req, res) => {
 /** Opponents aggregate (full list) */
 r.get("/opponents-agg", async (req, res) => {
   try {
-    const snap = await db.collection("liveOpponentsAgg").get();
+    const snap = await db
+      .collection("liveOpponentsAgg")
+      .orderBy("opponentName")
+      .limit(500)
+      .get();
     const out = [];
     for (const doc of snap.docs){
       const d = doc.data() || {};
