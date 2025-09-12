@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Pencil, Trash2, Loader2 } from "lucide-react";
+import { Loader2, Pencil, Trash2 } from "lucide-react";
 import BackButton from "../components/BackButton.jsx";
 import EditLogModal from "../components/EditLogModal.jsx";
 import Toast from "../components/Toast.jsx";
@@ -112,8 +112,12 @@ export default function TCGLiveLogDetail(){
   const [ev, setEv] = useState(null);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState({ message: "", type: "info" });
   const [deleting, setDeleting] = useState(false);
+
+  const showToast = (message, type = "info") => {
+    setToast({ message, type });
+  };
 
   useEffect(() => {
     let cancel = false;
@@ -191,12 +195,14 @@ export default function TCGLiveLogDetail(){
     setDeleting(true);
     try {
       await deleteLiveEvent(logId);
-      setToast({ message: "Evento excluído", type: "success" });
-      window.location.hash = "#/tcg-live";
+      showToast("Evento excluído", "success");
+      setTimeout(() => {
+        window.location.hash = "#/tcg-live";
+      }, 1000);
     } catch (e) {
       console.error("Failed to delete event", e);
       const msg = e?.message || "Falha ao excluir";
-      setToast({ message: msg, type: "error" });
+      showToast(msg, "error");
     } finally {
       setDeleting(false);
     }
@@ -321,9 +327,9 @@ export default function TCGLiveLogDetail(){
       }}
     />
     <Toast
-      message={toast?.message}
-      type={toast?.type}
-      onClose={() => setToast(null)}
+      message={toast.message}
+      type={toast.type}
+      onClose={() => setToast({ message: "", type: "info" })}
     />
     </>
   );
