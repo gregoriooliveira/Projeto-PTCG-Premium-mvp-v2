@@ -3,6 +3,7 @@ import cors from "cors";
 import liveRoutes from "./live/routes.js";
 import homeRoutes from "./home/routes.js";
 import importRoutes from "./importing/routes.js";
+import { nanoid } from "nanoid";
 
 const app = express();
 
@@ -61,13 +62,39 @@ const corsOptions = {
   origin: allowedOrigin,
   credentials: true,
   methods: ["GET","POST","PATCH","DELETE","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"]
+  allowedHeaders: ["Content-Type","Authorization","X-CSRF-Token"]
 };
 app.use(cors(corsOptions));
 app.options("*", cors(corsOptions));
 
 
 app.use(express.json({ limit: "2mb" }));
+
+// CSRF protection - double submit token
+const CSRF_COOKIE = "csrfToken";
+function getCookie(req, name){
+  const cookieHeader = req.headers.cookie || "";
+  const parts = cookieHeader.split(";").map(c => c.trim().split("="));
+  for(const [k, v] of parts){
+    if(k === name) return decodeURIComponent(v || "");
+  }
+  return null;
+}
+
+app.use((req, res, next) => {
+  let token = getCookie(req, CSRF_COOKIE);
+  if(!token){
+    token = nanoid();
+    res.cookie(CSRF_COOKIE, token, { sameSite: "strict" });
+  }
+  if(!["GET","HEAD","OPTIONS"].includes(req.method)){
+    const headerToken = req.headers["x-csrf-token"];
+    if(!headerToken || headerToken !== token){
+      return res.status(403).json({ error: "Invalid CSRF token" });
+    }
+  }
+  next();
+});
 
 app.get("/api/health", (req, res) => res.json({ ok:true }));
 

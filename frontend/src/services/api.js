@@ -1,8 +1,17 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
 
+function getCsrfToken(){
+  if (typeof document === 'undefined') return '';
+  return document.cookie.split('; ').find(r => r.startsWith('csrfToken='))?.split('=')[1] || '';
+}
+
 async function api(path, opts = {}) {
-  const res = await fetch(`${API_BASE}${path}`, { credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(opts.headers||{}) },
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) };
+  const token = getCsrfToken();
+  if (token) headers['X-CSRF-Token'] = token;
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: 'include',
+    headers,
     ...opts
   });
   if (!res.ok) {
