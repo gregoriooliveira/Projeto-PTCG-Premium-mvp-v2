@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Loader2 } from "lucide-react";
 import BackButton from "../components/BackButton.jsx";
 import EditLogModal from "../components/EditLogModal.jsx";
 import Toast from "../components/Toast.jsx";
@@ -113,6 +113,7 @@ export default function TCGLiveLogDetail(){
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [toast, setToast] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancel = false;
@@ -185,7 +186,9 @@ export default function TCGLiveLogDetail(){
   };
 
   const handleDelete = async () => {
+    if (deleting) return;
     if (!window.confirm("Deseja realmente excluir este evento?")) return;
+    setDeleting(true);
     try {
       await deleteLiveEvent(logId);
       setToast({ message: "Evento excluído", type: "success" });
@@ -194,6 +197,8 @@ export default function TCGLiveLogDetail(){
       console.error("Failed to delete event", e);
       const msg = e?.message || "Falha ao excluir";
       setToast({ message: msg, type: "error" });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -234,10 +239,11 @@ export default function TCGLiveLogDetail(){
             </button>
             <button
               onClick={handleDelete}
-              className="px-3 py-1.5 rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800"
+              disabled={deleting}
+              className="px-3 py-1.5 rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-200 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label="Excluir"
             >
-              <Trash2 className="w-4 h-4" />
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
             </button>
             <button
               onClick={() => {
