@@ -1,11 +1,15 @@
 import { randomUUID } from 'crypto';
 
 // In-memory session store: sessionId -> { events: [], logs: [], lastAccess: number }
+// Each list is capped at SESSION_MAX_ITEMS items.
 // TODO: Consider using external persistence (e.g., Redis) for production use.
 const store = new Map();
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+// Limit how many events/logs we keep in memory per session.
+export const SESSION_MAX_ITEMS = 100;
 
 setInterval(() => {
   const now = Date.now();
