@@ -31,12 +31,14 @@ export function getSession(req, res) {
   let sid = cookies.sid;
   if (!sid) {
     sid = randomUUID();
-    res.setHeader('Set-Cookie', `sid=${sid}; HttpOnly; Path=/; Secure; SameSite=Strict`);
+    res.cookie('sid', sid, { httpOnly: true, path: '/', secure: true, sameSite: 'strict' });
   }
-  if (!store.has(sid)) {
-    store.set(sid, { events: [], logs: [], lastAccess: Date.now() });
+  let session = store.get(sid);
+  if (!session) {
+    session = { events: [], logs: [], lastAccess: Date.now() };
+    store.set(sid, session);
   } else {
-    store.get(sid).lastAccess = Date.now();
+    session.lastAccess = Date.now();
   }
-  return store.get(sid);
+  return session;
 }
