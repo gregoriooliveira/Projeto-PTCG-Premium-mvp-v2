@@ -30,8 +30,14 @@ A API sobe em `http://localhost:8787`. Seu front deve usar `VITE_API_BASE_URL=ht
 
 Rotas que alteram dados (`POST`, `PATCH`, `DELETE`) exigem credencial.
 Envie `Authorization: Bearer <token>` com um **ID token** do Firebase.
-Para integrações servidor-servidor também é aceito um segredo estático
-definido em `API_SECRET`, enviado no cabeçalho `x-api-key` ou como token Bearer.
+
+Para obter o ID token no cliente, autentique-se pelo Firebase (Google, e-mail/senha etc.)
+e use `getIdToken()` do SDK. O token expira em aproximadamente 1 hora e deve ser
+renovado automaticamente pelo SDK antes de cada requisição.
+
+Em integrações servidor-servidor, utilize uma conta de serviço ou o Admin SDK para
+emitir um token customizado e trocá-lo por um ID token válido. Inclua sempre esse
+token no cabeçalho `Authorization` das chamadas.
 
 ## Endpoints principais
 
