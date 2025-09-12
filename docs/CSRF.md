@@ -1,6 +1,6 @@
 # CSRF Token Flow
 
-The backend sets a `csrfToken` cookie with `SameSite=Strict` on first contact. For any non-GET request, clients must include the same token in the `X-CSRF-Token` header. Requests also need `credentials: 'include'` so the cookie is sent.
+The backend sets a `csrfToken` cookie with `SameSite=Strict` and `HttpOnly` on first contact (and `Secure` when running in production). For any non-GET request, clients must include the same token in the `X-CSRF-Token` header. Requests also need `credentials: 'include'` so the cookie is sent.
 
 ## Flow
 1. Client performs a safe request (e.g., `GET /api/health`).
