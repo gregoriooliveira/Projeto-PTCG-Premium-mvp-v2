@@ -39,7 +39,11 @@ export async function recomputeOpponent(opponentName) {
   const wr = wrPercent(counts);
   let topDeckKey = null, max = 0;
   for (const [k,v] of deckCounts.entries()) if (v > max) { max = v; topDeckKey = k; }
-  await db.collection("liveOpponentsAgg").doc(opponentName).set({ opponentName, counts, wr, topDeckKey }, { merge: true });
+  const total = counts.W + counts.L + counts.T;
+  await db
+    .collection("liveOpponentsAgg")
+    .doc(opponentName)
+    .set({ opponentName, counts, total, wr, topDeckKey }, { merge: true });
 }
 
 
