@@ -26,8 +26,9 @@ app.use((req, res, next) => {
 
 
 // CORS (strict) - allow Vite dev with credentials
+const allowedOrigin = process.env.CORS_ORIGIN || "http://localhost:5173";
 const corsOptions = {
-  origin: "http://localhost:5173",
+  origin: allowedOrigin,
   credentials: true,
   methods: ["GET","POST","PATCH","DELETE","OPTIONS"],
   allowedHeaders: ["Content-Type","Authorization"]
