@@ -1,6 +1,6 @@
 - Onda 2: Página de Evento atualizada
 - Chips W/L baseados no nome imediatamente antes de 'wins/won.'
-- 1st/2st conforme backend (se houver)
+- 1st/2nd conforme backend (se houver)
 - Timeline por turno com colapso, linhas-filho: '>', '-', '•'
 - Rodapé 'Resultado' sem usar template literals (concatenação)
 - Removidas referências antigas a `result`
