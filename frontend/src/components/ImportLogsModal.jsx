@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import PokemonAutocomplete from "./PokemonAutocomplete.jsx";
 import { importLogsParse, importLogsCommit, normalizeDeckKey, getLiveTournament } from "../services/api.js";
@@ -7,6 +7,7 @@ function titleCase(s=""){ return String(s).replace(/\w\S*/g, (t)=>t[0].toUpperCa
 
 export default function ImportLogsModal({ isOpen, onClose, onSaved, initialValues }) {
   const [rawLog, setRawLog] = useState("");
+  const [playerOptions, setPlayerOptions] = useState([]);
   const [players, setPlayers] = useState({ you: "", opp: "" });
   const [deckName, setDeckName] = useState("");
   const [opponentDeck, setOpponentDeck] = useState("");
@@ -40,6 +41,7 @@ export default function ImportLogsModal({ isOpen, onClose, onSaved, initialValue
     setIsOnlineTourney(false);
     setNoTourneyId(false); setTourneyId(""); setTourneyInfo(null);
     setTourneyRound(""); setTourneyNameManual("");
+    setPlayerOptions([]);
     setBusy(false);
   }
 
@@ -55,6 +57,8 @@ export default function ImportLogsModal({ isOpen, onClose, onSaved, initialValue
   async function runParse(){
     try{
       const res = await importLogsParse({ rawLog, language: "auto", context:{ source:"tcg-live" } });
+      const opts = [res?.detected?.player, res?.detected?.opponent].filter(Boolean);
+      setPlayerOptions(opts);
       const { detected, suggestions } = res || {};
       if (detected){
         setPlayers(p => ({ you: detected.player || p.you, opp: detected.opponent || p.opp }));
@@ -99,6 +103,10 @@ export default function ImportLogsModal({ isOpen, onClose, onSaved, initialValue
   }, [isOnlineTourney, noTourneyId, tourneyId]);
 
   async function onSave(){
+    if (!playerOptions.includes(players.you) || !playerOptions.includes(players.opp)) {
+      alert('Jogadores inválidos');
+      return;
+    }
     setBusy(true);
     try{
       const payload = {
@@ -153,16 +161,38 @@ export default function ImportLogsModal({ isOpen, onClose, onSaved, initialValue
             <div className="col-span-12 md:col-span-6">
               <div className="rounded-xl border border-zinc-800 p-3">
                 <label className="text-sm text-zinc-400">VOCÊ</label>
-                <input className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-100" 
-                       placeholder="Seu usuário no jogo" value={players.you} onChange={e=>setPlayers(p=>({...p, you:e.target.value}))} />
+                <select
+                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-100"
+                  value={players.you}
+                  onChange={e=>setPlayers(p=>({...p, you:e.target.value}))}
+                >
+                  {playerOptions.map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="col-span-12 md:col-span-6">
               <div className="rounded-xl border border-zinc-800 p-3">
                 <label className="text-sm text-zinc-400">OPONENTE</label>
-                <input className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-100" 
-                       placeholder="Usuário do oponente" value={players.opp} onChange={e=>setPlayers(p=>({...p, opp:e.target.value}))} />
+                <select
+                  className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2 text-zinc-100"
+                  value={players.opp}
+                  onChange={e=>setPlayers(p=>({...p, opp:e.target.value}))}
+                >
+                  {playerOptions.map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
               </div>
+            </div>
+            <div className="col-span-12 flex justify-end">
+              <button
+                className="text-xs text-zinc-400 hover:underline"
+                onClick={() => setPlayers(p=>({ you: p.opp, opp: p.you }))}
+              >
+                Trocar você/oponente
+              </button>
             </div>
           </div>
 
