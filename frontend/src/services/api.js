@@ -5,7 +5,7 @@ function getCsrfToken(){
   return document.cookie.split('; ').find(r => r.startsWith('csrfToken='))?.split('=')[1] || '';
 }
 
-async function api(path, opts = {}) {
+export async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) };
   const token = getCsrfToken();
   if (token) headers['X-CSRF-Token'] = token;
