@@ -131,5 +131,3 @@ r.get("/home", async (req, res) => {
 });
 
 export default r;
-
-r.get("/home", (req,res) => res.json({ ok:true, widgets: [] }));
