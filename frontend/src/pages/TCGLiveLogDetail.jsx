@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import BackButton from "../components/BackButton.jsx";
+import EditLogModal from "../components/EditLogModal.jsx";
 import { getLiveEvent } from "../services/api.js";
 
 /** --- UI helpers --- **/
@@ -109,6 +110,7 @@ export default function TCGLiveLogDetail(){
 
   const [ev, setEv] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     let cancel = false;
@@ -126,6 +128,15 @@ export default function TCGLiveLogDetail(){
     })();
     return () => { cancel = true; };
   }, [logId]);
+
+  const refreshEvent = async () => {
+    try {
+      const data = await getLiveEvent(logId);
+      setEv(data || null);
+    } catch (e) {
+      console.error("Failed to refresh event", e);
+    }
+  };
 
   const timeline = useMemo(() => {
     if (!ev?.rawLog) return { setup: [], turns: [], finalLine: null };
@@ -168,7 +179,7 @@ export default function TCGLiveLogDetail(){
   const toneForTurn = (player) => (String(player||"").toLowerCase().includes(String(youName).toLowerCase())) ? "you" : "opp";
 
   const handleEdit = () => {
-    console.log("Edit event", logId);
+    setEditOpen(true);
   };
 
   const handleDelete = () => {
@@ -180,6 +191,7 @@ export default function TCGLiveLogDetail(){
   }
 
   return (
+    <>
     <div className="max-w-5xl mx-auto px-4 py-6">
       <BackButton href="#/tcg-live" title="Voltar" />
 
@@ -281,5 +293,16 @@ export default function TCGLiveLogDetail(){
         </div>
       )}
     </div>
+    <EditLogModal
+      isOpen={editOpen}
+      logId={logId}
+      ev={ev}
+      onClose={() => setEditOpen(false)}
+      onSaved={async () => {
+        await refreshEvent();
+        setEditOpen(false);
+      }}
+    />
+    </>
   );
 }
