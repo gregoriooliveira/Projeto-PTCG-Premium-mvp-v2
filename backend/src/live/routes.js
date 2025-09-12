@@ -11,9 +11,6 @@ const r = Router();
 
 function safeDocId(s){ try { return encodeURIComponent(String(s||"")); } catch { return String(s||"").replace(/[\/\.\#$\[\]]/g, "_"); } }
 
-
-function pick(obj, keys){ const o={}; for (const k of keys) if (obj[k]!==undefined) o[k]=obj[k]; return o; }
-
 /** Create an event (log) */
 r.post("/events", authMiddleware, async (req, res) => {
   const body = req.body || {};
