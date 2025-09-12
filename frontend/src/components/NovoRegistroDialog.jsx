@@ -6,13 +6,14 @@ import React, {
   useImperativeHandle,
 } from "react";
 import PropTypes from "prop-types";
+import { createEvent } from "../eventsRepo.js";
 
 /**
  * NovoRegistroDialog (robusto, inputs não-controlados p/ digitação fluida)
  * - Overlay fixo com backdrop
  * - Refs para inputs de texto => digitação suave (sem perder foco)
  * - "Tipo do Evento" controlado para alternar Loja/Cidade
- * - Persistência em localStorage e navegação por hash #/eventos/:id
+ * - Persistência no servidor e navegação por hash #/eventos/:id
  */
 const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
   { renderTrigger, open: openProp, onOpenChange, onCreated },
@@ -120,7 +121,7 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     return Object.keys(e).length === 0;
   };
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e?.preventDefault?.();
     if (!validate()) return;
 
@@ -137,13 +138,10 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     };
 
     try {
-      const key = "ptcg-premium:eventos";
-      const arr = JSON.parse(localStorage.getItem(key) || "[]");
-      arr.push(payload);
-      localStorage.setItem(key, JSON.stringify(arr));
+      await createEvent(payload);
       if (import.meta?.env?.DEV) console.info("[ptcg] evento salvo", payload);
     } catch (err) {
-      console.warn("Falha ao salvar evento no localStorage", err);
+      console.warn("Falha ao salvar evento no servidor", err);
     }
 
     if (typeof onCreated === "function") onCreated(payload);

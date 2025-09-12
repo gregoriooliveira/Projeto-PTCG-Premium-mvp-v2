@@ -1,7 +1,5 @@
 // src/services/tournamentsData.js
-import { getItem, setItem } from "../utils/storage.js";
-
-const STORAGE_KEY = "ptcg_tournaments_live";
+let MEM = null;
 
 function slugifyName(s) {
   return (s || "")
@@ -14,22 +12,19 @@ export function makeTournamentId(name, dateISO) {
 }
 
 function seedIfEmpty() {
-  const existing = getItem(STORAGE_KEY, null);
-  if (!existing) {
-    const seed = [
+  if (!MEM) {
+    MEM = [
       { id: "limitless-online-2025-08-25", name: "Limitless Online", dateISO: "2025-08-25", roundsCount: 5 },
       { id: "pokemon-global-challenge-2025-08-20", name: "Pokémon Global Challenge", dateISO: "2025-08-20", roundsCount: 3 },
     ];
-    setItem(STORAGE_KEY, seed);
-    return seed;
   }
-  return existing;
+  return MEM;
 }
 function readAll() {
-  return getItem(STORAGE_KEY, []);
+  return MEM || seedIfEmpty();
 }
 function writeAll(arr) {
-  setItem(STORAGE_KEY, arr || []);
+  MEM = arr || [];
 }
 
 export function getSummaryList() {

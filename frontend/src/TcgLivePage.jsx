@@ -1,17 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getItem, setItem } from "./utils/storage.js";
+import { getAllLogs, addLog } from "./logsRepo.js";
 
 /**
  * Modelo: Página TCG Live
- * - Armazena logs no localStorage (chave: "ptcg-premium:live-logs")
+ * - Armazena logs no servidor (chave de sessão)
  * - Widgets espelhando a estrutura do TCG Físico, mas filtrando somente LOGS ONLINE
  * - "Importar Log" substitui "Novo Registro"
  */
 
-const LS_KEY = "ptcg-premium:live-logs";
-
-const getAllLogs = () => getItem(LS_KEY, []);
-const saveAllLogs = (arr) => setItem(LS_KEY, arr);
+const getLogs = () => getAllLogs();
 
 const norm = (s) => String(s || "").trim();
 const normalizeDeck = (s) => norm(s).toLowerCase();
@@ -76,7 +73,7 @@ export default function TcgLivePage(){
   const [fTournamentName, setFTournamentName] = useState("");
   const [fRound, setFRound] = useState("");
 
-  useEffect(()=>{ setLogs(getAllLogs()); }, []);
+  useEffect(()=>{ getAllLogs().then(setLogs); }, []);
 
   const onSaveImport = () => {
     const entry = {
@@ -89,9 +86,8 @@ export default function TcgLivePage(){
       tournamentName: fIsTournament ? norm(fTournamentName) : "",
       round: fIsTournament ? norm(fRound) : "",
     };
-    const next = [entry, ...getAllLogs()];
-    saveAllLogs(next);
-    setLogs(next);
+    setLogs([entry, ...logs]);
+    addLog(entry);
     setShowImport(false);
     // reset
     setFDate(todayYMD()); setFDeck(""); setFResult("W"); setFIsTournament(false); setFTournamentName(""); setFRound("");

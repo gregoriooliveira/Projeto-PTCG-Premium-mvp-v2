@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import ResumoGeralWidget from "./components/widgets/ResumoGeralWidget.jsx";
 import { BarChart3, CalendarDays, Trophy, Users, Upload } from "lucide-react";
 import DeckLabel from "./components/DeckLabel.jsx";
+import { getEvent } from "./eventsRepo.js";
 
 /** Helpers locais para contagem e top deck */
 function wlCounts(list = []) {
@@ -56,15 +57,13 @@ function getTournamentLink(kind){
 // --- Hash-based Event Detail Overlay ---
 function EventDetailOverlay(){
   const [ev, setEv] = React.useState(null);
-  React.useEffect(()=>{
-    const read = () => {
-      const m = (window.location.hash||"").match(/^#\/eventos\/(.+)$/);
-      if (m){
-        try{
-          const arr = JSON.parse(localStorage.getItem("ptcg-premium:eventos")||"[]");
-          setEv(arr.find(x=>x.id===m[1]) || {id:m[1], notFound:true});
-        }catch{ setEv({notFound:true}); }
-      }else{
+  React.useEffect(() => {
+    const read = async () => {
+      const m = (window.location.hash || "").match(/^#\/eventos\/(.+)$/);
+      if (m) {
+        const data = await getEvent(m[1]);
+        setEv(data || { id: m[1], notFound: true });
+      } else {
         setEv(null);
       }
     };

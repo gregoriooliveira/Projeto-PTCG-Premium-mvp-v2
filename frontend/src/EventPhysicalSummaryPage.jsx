@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import BackButton from "./components/BackButton";
+import { getEvent } from "./eventsRepo.js";
 
 // helper: get store slug from hash query
 const getStoreFromHash = () => {
@@ -250,27 +251,23 @@ export default function EventPhysicalSummaryPage({
     deckMonB: "",
   };
 
-  // IMPORTANTe: manter dados no estado para edição sem mutar const
-  const [eventData, setEventData] = useState(() => {
-    // try history.state first
-    try{
-      const fromHist = (window.history && window.history.state && window.history.state.eventFromProps) || null;
-      if (fromHist) return { ...defaultEvent, ...mapIncomingEvent(fromHist) };
-    }catch{}
-    // then storage array 'ptcg-premium:eventos'
-    try{
-      const id = extractEventIdFromHash();
-      const arr = JSON.parse(localStorage.getItem('ptcg-premium:eventos') || '[]');
-      const hit = id ? arr.find(e => (e && (e.id===id || e.eventId===id))) : null;
-      if (hit) return { ...defaultEvent, ...mapIncomingEvent(hit) };
-    }catch{}
-    // then generic new-event
-    try{
-      const raw = sessionStorage.getItem('ptcg:new-event') || localStorage.getItem('ptcg:new-event');
-      if (raw) return { ...defaultEvent, ...mapIncomingEvent(JSON.parse(raw)) };
-    }catch{}
-    return defaultEvent;
-  });
+  // IMPORTANTE: manter dados no estado para edição sem mutar const
+  const [eventData, setEventData] = useState(defaultEvent);
+  useEffect(() => {
+    try {
+      const fromHist = window.history?.state?.eventFromProps;
+      if (fromHist) {
+        setEventData({ ...defaultEvent, ...mapIncomingEvent(fromHist) });
+        return;
+      }
+    } catch {}
+    const id = extractEventIdFromHash();
+    if (id) {
+      getEvent(id).then((ev) => {
+        if (ev) setEventData({ ...defaultEvent, ...mapIncomingEvent(ev) });
+      });
+    }
+  }, []);
 
   const [rounds, setRounds] = useState([]);
   const [editRoundIndex, setEditRoundIndex] = useState(null);
