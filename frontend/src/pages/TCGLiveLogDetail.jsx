@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import BackButton from "../components/BackButton.jsx";
-import { getLiveEvent } from "../services/api.js";
+import { deleteLiveEvent, getLiveEvent } from "../services/api.js";
 
 /** --- UI helpers --- **/
 function Chip({ children, tone = "zinc", small=false, sub=false, strong=false, className="" }){
@@ -109,6 +109,18 @@ export default function TCGLiveLogDetail(){
   const [ev, setEv] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const handleDelete = async () => {
+    if (!window.confirm("Deseja realmente deletar esse log?")) return;
+    try {
+      await deleteLiveEvent(logId);
+      setEv(null);
+      window.location.hash = "#/tcg-live";
+    } catch (e) {
+      console.error("Failed to delete event", e);
+      alert("Erro ao deletar log");
+    }
+  };
+
   useEffect(() => {
     let cancel = false;
     (async () => {
@@ -190,19 +202,28 @@ export default function TCGLiveLogDetail(){
           {oppRes && (oppRes === "W" ? <Chip tone="green" strong>W</Chip> : <Chip tone="rose" strong>L</Chip>)}
         </h1>
 
-        {/* Exportar .txt do log bruto */}
-        {ev?.rawLog && (
+        <div className="flex items-center gap-2">
+          {/* Exportar .txt do log bruto */}
+          {ev?.rawLog && (
+            <button
+              onClick={()=>{
+                const blob = new Blob([ev.rawLog], { type: "text/plain;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a"); a.href = url; a.download = `evento-${logId}.txt`; a.click(); URL.revokeObjectURL(url);
+              }}
+              className="px-3 py-1.5 rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-200 text-sm hover:bg-zinc-800"
+            >
+              Exportar .txt
+            </button>
+          )}
+
           <button
-            onClick={()=>{
-              const blob = new Blob([ev.rawLog], { type: "text/plain;charset=utf-8" });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a"); a.href = url; a.download = `evento-${logId}.txt`; a.click(); URL.revokeObjectURL(url);
-            }}
-            className="px-3 py-1.5 rounded-md border border-zinc-700 bg-zinc-900/60 text-zinc-200 text-sm hover:bg-zinc-800"
+            onClick={handleDelete}
+            className="px-3 py-1.5 rounded-md border border-rose-700 bg-rose-900/60 text-rose-200 text-sm hover:bg-rose-800"
           >
-            Exportar .txt
+            Excluir
           </button>
-        )}
+        </div>
       </div>
 
       {/* Linha de decks com fallback e link de oponente */}
