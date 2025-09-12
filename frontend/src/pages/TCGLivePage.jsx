@@ -5,7 +5,6 @@ import { officialArtworkUrl } from "../services/api.js";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import ResumoGeralWidget from "../components/widgets/ResumoGeralWidget.jsx";
 import { Trophy, List, ClipboardList } from "lucide-react";
-import ImportLogsModal from "../components/ImportLogsModal.jsx";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -149,19 +148,7 @@ function normalizeFromLogs(logsJson) {
 }
 
 export default function TCGLivePage() {
-  const [showImport, setShowImport] = useState(false);
   const [summary, setSummary] = useState(null);
-
-  // Abre o modal automaticamente se navegar via #/importar
-  useEffect(() => {
-    const openIfImport = () => {
-      const hash = window.location.hash || "";
-      if (hash.split("?")[0] === "#/importar") setShowImport(true);
-    };
-    openIfImport();
-    window.addEventListener("hashchange", openIfImport);
-    return () => window.removeEventListener("hashchange", openIfImport);
-  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -182,11 +169,6 @@ export default function TCGLivePage() {
     })();
     return () => { alive = false };
   }, []);
-
-  function handleSavedLog(payload) {
-    window.location.hash = `#/tcg-live/logs/${encodeURIComponent(payload.id)}`;
-    setShowImport(false);
-  }
 
   return (
     <div className="p-4 space-y-6">
@@ -383,14 +365,6 @@ export default function TCGLivePage() {
         </CardContent>
       </Card>
 
-      {/* Modal de Import */}
-      {showImport && (
-        <ImportLogsModal
-          open={showImport}
-          onClose={() => setShowImport(false)}
-          onSaved={handleSavedLog}
-        />
-      )}
     </div>
   );
 }
