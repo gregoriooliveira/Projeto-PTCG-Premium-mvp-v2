@@ -5,6 +5,7 @@ import { normalizeDeckKey, normalizeName } from "../utils/normalize.js";
 import { wrPercent, countsAdd, countsOfResult } from "../utils/wr.js";
 import { dateKeyFromTs } from "../utils/tz.js";
 import { recomputeAllForEvent } from "./aggregates.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const r = Router();
 
@@ -14,7 +15,7 @@ function safeDocId(s){ try { return encodeURIComponent(String(s||"")); } catch {
 function pick(obj, keys){ const o={}; for (const k of keys) if (obj[k]!==undefined) o[k]=obj[k]; return o; }
 
 /** Create an event (log) */
-r.post("/events", async (req, res) => {
+r.post("/events", authMiddleware, async (req, res) => {
   const body = req.body || {};
   const now = Date.now();
   const eventId = body.eventId || nanoid();
@@ -71,7 +72,7 @@ r.get("/events/:id", async (req, res) => {
 });
 
 /** Update event */
-r.patch("/events/:id", async (req, res) => {
+r.patch("/events/:id", authMiddleware, async (req, res) => {
   const id = req.params.id;
   const ds = await db.collection("liveEvents").doc(id).get();
   if (!ds.exists) return res.status(404).json({ error:"not_found" });
@@ -92,7 +93,7 @@ r.patch("/events/:id", async (req, res) => {
 });
 
 /** Delete event */
-r.delete("/events/:id", async (req, res) => {
+r.delete("/events/:id", authMiddleware, async (req, res) => {
   const id = req.params.id;
   const ds = await db.collection("liveEvents").doc(id).get();
   if (!ds.exists) return res.status(404).json({ error:"not_found" });

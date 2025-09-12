@@ -26,6 +26,13 @@
 
 A API sobe em `http://localhost:8787`. Seu front deve usar `VITE_API_BASE_URL=http://localhost:8787`.
 
+## Autenticação
+
+Rotas que alteram dados (`POST`, `PATCH`, `DELETE`) exigem credencial.
+Envie `Authorization: Bearer <token>` com um **ID token** do Firebase.
+Para integrações servidor-servidor também é aceito um segredo estático
+definido em `API_SECRET`, enviado no cabeçalho `x-api-key` ou como token Bearer.
+
 ## Endpoints principais
 
 - `POST   /api/live/events`
