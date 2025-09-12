@@ -87,7 +87,11 @@ app.use((req, res, next) => {
   let token = getCookie(req, CSRF_COOKIE);
   if(!token){
     token = nanoid();
-    res.cookie(CSRF_COOKIE, token, { sameSite: "strict" });
+    res.cookie(CSRF_COOKIE, token, {
+      sameSite: "strict",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production"
+    });
   }
   if(!["GET","HEAD","OPTIONS"].includes(req.method)){
     const headerToken = req.headers["x-csrf-token"];
