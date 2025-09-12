@@ -1,9 +1,6 @@
-const API_BASE = '/api/live-logs';
+import { getCsrfToken } from "./utils/csrf.js";
 
-function getCsrfToken() {
-  const m = document.cookie.match(/(?:^|; )csrfToken=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : '';
-}
+const API_BASE = '/api/live-logs';
 
 let migrated = false;
 async function migrateLegacy() {

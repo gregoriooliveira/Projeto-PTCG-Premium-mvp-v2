@@ -1,9 +1,6 @@
-const API_BASE = '/api/events';
+import { getCsrfToken } from "./utils/csrf.js";
 
-function getCsrfToken() {
-  const m = document.cookie.match(/(?:^|; )csrfToken=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : '';
-}
+const API_BASE = '/api/events';
 
 let migrationDone = false;
 async function migrateLegacy() {
