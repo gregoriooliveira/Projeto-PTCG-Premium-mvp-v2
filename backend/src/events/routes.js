@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getSession } from '../sessionStore.js';
+import { getSession, SESSION_MAX_ITEMS } from '../sessionStore.js';
 
 const router = Router();
 
@@ -20,6 +20,7 @@ router.post('/', (req, res) => {
   const ev = req.body || {};
   if (!ev.id) ev.id = `evt_${Date.now()}`;
   session.events.push(ev);
+  if (session.events.length > SESSION_MAX_ITEMS) session.events.shift();
   res.json(ev);
 });
 

@@ -53,6 +53,12 @@ token no cabeçalho `Authorization` das chamadas.
 
 Agregações (dias, decks, oponentes, torneios) são atualizadas **on write** pelo servidor.
 
+## Sessão em memória
+
+O servidor mantém eventos e logs em memória por sessão apenas para uso temporário.
+Cada lista é limitada a **100** itens; ao exceder o limite, os mais antigos são
+descartados automaticamente.
+
 ## App Engine
 
 O `app.yaml` já está incluso. Para deploy futuramente, garanta as credenciais de serviço no projeto GCP e rode `gcloud app deploy`.
