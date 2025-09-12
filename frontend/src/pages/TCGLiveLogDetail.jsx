@@ -201,11 +201,11 @@ export default function TCGLiveLogDetail(){
           {/* Você: W/L ANTES do nome */}
           {youRes && (youRes === "W" ? <Chip tone="green" strong>W</Chip> : <Chip tone="rose" strong>L</Chip>)}
           <span>{youName}</span>
-          {/* Você: 1st/2st após o nome */}
-          {firstPlayer && <Chip small sub tone="zinc">{firstPlayer === "you" ? "1st" : "2st"}</Chip>}
+          {/* Você: 1st/2nd após o nome */}
+          {firstPlayer && <Chip small sub tone="zinc">{firstPlayer === "you" ? "1st" : "2nd"}</Chip>}
           <span className="text-zinc-500 mx-2">vs</span>
-          {/* Oponente: 1st/2st antes do nome */}
-          {firstPlayer && <Chip small sub tone="zinc">{firstPlayer === "opp" ? "1st" : "2st"}</Chip>}
+          {/* Oponente: 1st/2nd antes do nome */}
+          {firstPlayer && <Chip small sub tone="zinc">{firstPlayer === "opp" ? "1st" : "2nd"}</Chip>}
           <span>{oppName}</span>
           {/* Oponente: W/L depois do nome */}
           {oppRes && (oppRes === "W" ? <Chip tone="green" strong>W</Chip> : <Chip tone="rose" strong>L</Chip>)}
