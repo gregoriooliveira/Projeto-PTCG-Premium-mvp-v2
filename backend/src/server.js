@@ -3,6 +3,8 @@ import cors from "cors";
 import liveRoutes from "./live/routes.js";
 import homeRoutes from "./home/routes.js";
 import importRoutes from "./importing/routes.js";
+import eventsRoutes from "./events/routes.js";
+import logsRoutes from "./logs/routes.js";
 import { nanoid } from "nanoid";
 
 const app = express();
@@ -102,6 +104,8 @@ app.get("/api/health", (req, res) => res.json({ ok:true }));
 app.use("/api/live", liveRoutes);
 app.use("/api", homeRoutes);
 app.use("/api", importRoutes);
+app.use("/api/events", eventsRoutes);
+app.use("/api/live-logs", logsRoutes);
 
 // Placeholder for existing /api/home if needed (no-op here)
 // app.get("/api/home", ...);

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { getAllEvents, getMatchesCount } from "./eventsRepo.js";
-import { getItem, setItem } from "./utils/storage.js";
+import { getAllEvents, getMatchesCount, updateEvent } from "./eventsRepo.js";
 
 const norm = s => String(s || "").trim();
 const normalizeCity = (s) => norm(s)
@@ -50,7 +49,7 @@ export default function TournamentEventsPage() {
   const hash = useHash();
 
   // Load all events
-  useEffect(() => { setAll(getAllEvents()); }, []);
+  useEffect(() => { getAllEvents().then(setAll); }, []);
 
   const selectedTypes = useMemo(() => parseTypesFromHash(hash), [hash]);
   const selectedSet = useMemo(() => new Set(selectedTypes.filter(Boolean)), [selectedTypes]);
@@ -152,9 +151,9 @@ export default function TournamentEventsPage() {
   {!city && (
     <button
       onClick={(e)=>{ e.stopPropagation(); const novo = prompt("Informe a Cidade para este torneio:"); if(!novo) return; try {
-        const all = getItem("ptcg-premium:eventos", []);
-        const idx = all.findIndex(x=>x?.id===ev?.id);
-        if(idx>=0){ all[idx].local = novo; setItem("ptcg-premium:eventos", all); window.location.reload(); }
+        updateEvent(ev.id, { local: novo }).then(() => {
+          getAllEvents().then(setAll);
+        });
       } catch(_){} }}
       className="text-[10px] px-2 py-0.5 rounded-xl bg-zinc-800 hover:bg-zinc-700"
       aria-label="Editar cidade do torneio"
