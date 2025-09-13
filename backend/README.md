@@ -39,15 +39,54 @@ Em integrações servidor-servidor, utilize uma conta de serviço ou o Admin SDK
 emitir um token customizado e trocá-lo por um ID token válido. Inclua sempre esse
 token no cabeçalho `Authorization` das chamadas.
 
+## CSRF
+
+Para requisições que modificam dados, o backend exige um token CSRF. O cookie
+`csrfToken` é enviado na primeira chamada segura e o mesmo valor deve ser
+reenviado no cabeçalho `X-CSRF-Token` em chamadas subsequentes. As requisições
+devem usar `credentials: 'include'` para que o cookie acompanhe o pedido. Veja
+[docs/CSRF.md](../docs/CSRF.md) para detalhes.
+
+```js
+const csrf = getCookie('csrfToken');
+const idToken = await getIdToken();
+fetch('/api/live/events', {
+  method: 'POST',
+  credentials: 'include',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${idToken}`,
+    'X-CSRF-Token': csrf
+  },
+  body: JSON.stringify({ /* ... */ })
+});
+```
+
 ## Endpoints principais
 
+- `GET    /api/health`
+- `GET    /api/home`
+- `GET    /api/events`
+- `GET    /api/events/:id`
+- `POST   /api/events`
+- `PUT    /api/events/:id`
+- `GET    /api/live-logs`
+- `POST   /api/live-logs`
+- `POST   /api/import-logs/parse`
+- `POST   /api/import-logs/commit`
+- `GET    /api/pokedex/search`
+- `GET    /api/pokedex/by-slug/:slug`
 - `POST   /api/live/events`
+- `GET    /api/live/events`
 - `GET    /api/live/events/:id`
 - `PATCH  /api/live/events/:id`
 - `DELETE /api/live/events/:id`
 - `GET    /api/live/summary?limitDays=5`
 - `GET    /api/live/days/:date`
 - `GET    /api/live/decks`
+- `GET    /api/live/decks/:deck/logs`
+- `GET    /api/live/opponents-agg`
+- `GET    /api/live/logs`
 - `GET    /api/live/tournaments`
 - `GET    /api/live/tournaments/:id`
 
