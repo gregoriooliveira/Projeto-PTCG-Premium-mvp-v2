@@ -95,7 +95,7 @@ app.use((req, res, next) => {
     token = nanoid();
     res.cookie(CSRF_COOKIE, token, {
       sameSite: "strict",
-      httpOnly: true,
+      httpOnly: false,
       secure: process.env.NODE_ENV === "production"
     });
   }
