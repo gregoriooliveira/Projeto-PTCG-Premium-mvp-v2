@@ -71,15 +71,6 @@ function pickLogRows(payload){
 }
 
 function fromSlugToName(slug){
-
-function renderWLChip(r){
-  const v = String(r||'').trim().toUpperCase();
-  const base = "inline-flex h-6 items-center rounded-md px-2 text-xs font-semibold ring-1 ring-inset";
-  if (v === 'W') return <span className={base + " bg-emerald-500/10 text-emerald-300 ring-emerald-500/20"}>W</span>;
-  if (v === 'L') return <span className={base + " bg-rose-500/10 text-rose-300 ring-rose-500/20"}>L</span>;
-  if (v === 'E' || v === 'T') return <span className={base + " bg-zinc-500/10 text-zinc-300 ring-zinc-500/20"}>E</span>;
-  return <span className={base + " bg-zinc-500/10 text-zinc-300 ring-zinc-500/20"}>-</span>;
-}
   if(!slug) return "";
   try{
     return String(slug).replaceAll(/[%_+]/g," ").replaceAll("-"," ").replace(/\s+/g," ").trim();
