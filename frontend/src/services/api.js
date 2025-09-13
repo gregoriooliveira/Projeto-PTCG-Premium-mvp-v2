@@ -7,7 +7,11 @@ function getCsrfToken(){
 
 export async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers||{}) };
-  const token = getCsrfToken();
+  let token = getCsrfToken();
+  if (!token) {
+    await fetch(`${API_BASE}/api/health`, { credentials:'include' });
+    token = getCsrfToken();
+  }
   if (token) headers['X-CSRF-Token'] = token;
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
