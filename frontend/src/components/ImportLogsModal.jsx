@@ -132,7 +132,8 @@ export default function ImportLogsModal({ isOpen, onClose, onSaved, initialValue
           ) : null
         }
       };
-      if (!deckName || !deckName.trim()) { alert('Informe o Deck do oponente'); return; }
+      if (!deckName.trim()) { alert('Informe o nome do seu deck'); setBusy(false); return; }
+      if (!opponentDeck.trim()) { alert('Informe o deck do oponente'); setBusy(false); return; }
       const res = await importLogsCommit(payload);
       onSaved && onSaved({ id: res?.matchId, matchId: res?.matchId, ...res });
       resetForm({});
@@ -289,7 +290,7 @@ export default function ImportLogsModal({ isOpen, onClose, onSaved, initialValue
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-zinc-800">
             <button className="px-4 py-2 rounded-xl border border-zinc-700 text-zinc-300 hover:bg-zinc-800" onClick={() => { resetForm({}); onClose && onClose(); }}>Fechar</button>
-            <button disabled={busy} className="px-4 py-2 rounded-xl bg-white text-zinc-900 hover:bg-white disabled:opacity-50" onClick={onSave}>
+            <button disabled={busy || !deckName.trim() || !opponentDeck.trim()} className="px-4 py-2 rounded-xl bg-white text-zinc-900 hover:bg-white disabled:opacity-50" onClick={onSave}>
               {busy ? "Salvando..." : "Salvar"}
             </button>
           </div>
