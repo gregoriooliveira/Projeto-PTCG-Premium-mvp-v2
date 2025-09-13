@@ -29,10 +29,13 @@ async function sourceSummary(prefix, limitDays){
   })).sort((a,b)=>b.wr-a.wr).slice(0,5);
   // opponents
   const oppSnap = await db.collection(`${prefix}OpponentsAgg`).get();
-  const topOpponents = oppSnap.docs.map(d=>d.data()).map(d => ({
-    opponentName: d.opponentName, counts: d.counts, wr: d.wr,
-    topDeck: d.topDeckKey ? { deckKey: d.topDeckKey } : null
-  })).sort((a,b)=> (total(b.counts)-total(a.counts))).slice(0,5);
+  const topOpponents = oppSnap.docs.map(doc => {
+    const d = doc.data();
+    return {
+      opponentName: d.opponentName || doc.id, counts: d.counts, wr: d.wr,
+      topDeck: d.topDeckKey ? { deckKey: d.topDeckKey } : null
+    };
+  }).sort((a,b)=> (total(b.counts)-total(a.counts))).slice(0,5);
   /*__ENRICH_TOPDECK_POKEMONS__*/
   // Enrich topOpponents[].topDeck with pokemons from decks/{deckKey}
   for (let i=0;i<topOpponents.length;i++){
