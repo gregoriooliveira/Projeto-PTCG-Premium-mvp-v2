@@ -353,7 +353,6 @@ r.get("/opponents-agg", async (req, res) => {
   try {
     const snap = await db
       .collection("liveOpponentsAgg")
-      .orderBy("opponentName")
       .limit(500)
       .get();
     const out = [];
@@ -373,7 +372,7 @@ r.get("/opponents-agg", async (req, res) => {
           topDeck = { deckKey: d.topDeckKey };
         }
       }
-      out.push({ opponentName: d.opponentName, counts: d.counts, wr: d.wr, topDeck });
+      out.push({ opponentName: d.opponentName || doc.id, counts: d.counts, wr: d.wr, topDeck });
     }
     res.json(out.sort((a,b)=> (a.opponentName||'').localeCompare(b.opponentName||'')));
   } catch (e){
