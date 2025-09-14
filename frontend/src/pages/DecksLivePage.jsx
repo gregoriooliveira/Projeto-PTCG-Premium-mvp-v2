@@ -1,314 +1,348 @@
 import React, { useEffect, useMemo, useState } from "react";
-import BackButton from "../components/BackButton.jsx";
-import { listLiveDecks } from "../services/api.js";
-import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import DeckLabel from "../components/DeckLabel.jsx";
+import { prettyDeckKey } from "../services/prettyDeckKey.js";
 
-// ===== Helpers ==============================================================
-function wrFromCounts(c = {}) {
-  const W = Number(c.W || 0), L = Number(c.L || 0), T = Number(c.T || 0);
-  const denom = W + L + T;
-  if (!denom) return 0;
-  return Math.round(((W + 0.5 * T) / denom) * 100);
-}
-function toTitleCase(s = "") { return s.replace(/\w\S*/g, t => t[0].toUpperCase() + t.slice(1).toLowerCase()); }
-function clsx(...xs){ return xs.filter(Boolean).join(" "); }
+const API = import.meta.env.VITE_API_BASE_URL || "";
 
-// Datas
-function normalizeLogDate(rec){
-  const raw = rec?.createdAt || rec?.ts || rec?.playedAt || rec?.date || rec?.timeISO || "";
-  if (!raw) return null;
-  if (raw instanceof Date) return raw;
-  if (typeof raw === "number" || /^\d+$/.test(String(raw))) {
-    const n = Number(raw); if (!Number.isNaN(n)) return new Date(n);
+/* ============================ Helpers ============================ */
+function cls(...xs) { return xs.filter(Boolean).join(" "); }
+
+function safeArray(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.result)) return payload.result;
+  for (const v of Object.values(payload || {})) {
+    if (Array.isArray(v) && v.length && typeof v[0] === "object") return v;
   }
-  let s = String(raw);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) s = s + "T12:00:00";
-  return new Date(s);
+  return [];
 }
-function formatDate(input) {
-  if (!input) return "-";
-  const d = (input instanceof Date) ? input : new Date(input);
-  if (isNaN(d.getTime())) return "-";
+async function tryJson(url) {
   try {
-    return new Intl.DateTimeFormat("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-      day: "2-digit", month: "2-digit", year: "numeric",
-      hour: "2-digit", minute: "2-digit", hour12: false
-    }).format(d);
-  } catch (e) {
-    const dd = String(d.getDate()).padStart(2, "0");
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const yyyy = d.getFullYear();
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mi = String(d.getMinutes()).padStart(2, "0");
-    return `${dd}/${mm}/${yyyy} ${hh}:${mi}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(String(r.status));
+    const ct = r.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) throw new Error("not_json");
+    return await r.json();
+  } catch { return null; }
+}
+
+function toDateISO(value) {
+  if (!value && value !== 0) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
+  const d = new Date(Number(value));
+  return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+}
+function toDateTimeBR(v) {
+  if (!v && v !== 0) return "-";
+  let d;
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}/.test(v)) d = new Date(v + "T12:00:00");
+  else d = new Date(Number(v));
+  if (isNaN(d.getTime())) return "-";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy}, ${hh}:${mi}`;
+}
+
+const wrFromCounts = ({ W=0, L=0, T=0 }) => {
+  const tot = (W||0) + (L||0) + (T||0);
+  return tot ? Math.round((W / tot) * 100) : 0;
+};
+
+function getTournamentNameFromLog(r) {
+  return (
+    r?.event ||
+    r?.eventName ||
+    r?.tournamentName ||
+    r?.tournament ||
+    r?.tournament_name ||
+    r?.tourneyName ||
+    ""
+  );
+}
+function getTournamentIdFromLog(r) {
+  return r?.tournamentId || r?.tId || r?.tournament_id || "";
+}
+
+/* ============================ API wrappers ============================ */
+
+async function listLiveDecks() {
+  // Deixe os dados "crus" — vamos fazer a contagem na renderização (como era antes)
+  const d1 = await tryJson(`${API}/api/live/decks`);
+  if (Array.isArray(d1) && d1.length) return d1;
+
+  // Fallback: deriva dos logs (se o endpoint de decks não existir)
+  const logs = await tryJson(`${API}/api/live/logs?limit=2000`);
+  const rows = safeArray(logs?.rows || logs).filter(r =>
+    (r.source || r.origin || "live").toLowerCase().includes("live")
+  );
+  const map = new Map();
+  for (const r of rows) {
+    const key = r.deck || r.playerDeck || r.myDeck || "-";
+    const v = String(r.result || r.r || "").toUpperCase();
+    const agg = map.get(key) || { deckKey: key, counts: { W:0, L:0, T:0 } };
+    if (v==="W") agg.counts.W++; else if (v==="L") agg.counts.L++; else agg.counts.T++;
+    map.set(key, agg);
   }
+  const arr = Array.from(map.values()).map(x => ({ deckKey: x.deckKey, counts: x.counts, wr: wrFromCounts(x.counts) }));
+  arr.sort((a,b)=> b.wr - a.wr);
+  return arr;
 }
 
-// Nomes de deck — comparação estável
-function normalizeDeckName(s = "") {
-  return String(s)
-    .normalize("NFD").replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/['’]/g, "")        // remove apostrophes to collapse possessives (arven's -> arvens)
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-function deckMatches(row, deckKey) {
-  const target = normalizeDeckName(deckKey);
-  const candidates = [
-    row.myDeck, row.deck, row.deckKey, row.deckName, row.playerDeck, row.userDeckName,
-    row.userDeckKey, row.playerDeckName, row.miniDeck, row.deckkey, row.deck_title
-  ];
-  return candidates.some(v => normalizeDeckName(v || "") === target);
+async function listLogsByDeck(deckKey) {
+  const url = `${API}/api/live/logs?deck=${encodeURIComponent(deckKey)}&limit=1000`;
+  const j = await tryJson(url);
+  return safeArray(j?.rows || j).filter(r =>
+    (r.source || r.origin || "live").toLowerCase().includes("live")
+  );
 }
 
-// Chips iguais aos de Oponentes
-const CHIP = "px-2 py-0.5 rounded-md text-xs font-medium border";
+/* ============================ UI bits ============================ */
 function CountChip({ label, value }) {
-  const t = String(label || "").toUpperCase();
-  if (t === "W") return <span className={CHIP + " bg-green-900/40 text-green-300 border-green-800"}>W {value ?? 0}</span>;
-  if (t === "L") return <span className={CHIP + " bg-rose-900/40 text-rose-300 border-rose-800"}>L {value ?? 0}</span>;
-  return <span className={CHIP + " bg-amber-900/40 text-amber-300 border-amber-800"}>E {value ?? 0}</span>;
-}
-function renderWLChip(r){
-  const v = String(r ?? "").trim().toUpperCase();
-  const base = "inline-flex h-6 items-center rounded-md px-2 text-xs font-semibold ring-1 ring-inset";
-  if (v === "W") return <span className={base + " bg-emerald-500/10 text-emerald-300 ring-emerald-500/20"}>W</span>;
-  if (v === "L") return <span className={base + " bg-rose-500/10 text-rose-300 ring-rose-500/20"}>L</span>;
-  return <span className={base + " bg-zinc-500/10 text-zinc-300 ring-zinc-500/20"}>E</span>;
+  const color =
+    label === "W" ? "bg-green-900/40 text-green-300 border-green-800" :
+    label === "L" ? "bg-rose-900/40 text-rose-300 border-rose-800" :
+                    "bg-amber-900/40 text-amber-300 border-amber-800";
+  return (
+    <span className={cls("px-2 py-0.5 rounded-md text-xs border", color)}>
+      {label}{value ?? 0}
+    </span>
+  );
 }
 
-// ====== Logs por deck (com filtro client-side garantido) ====================
-async function fetchLogsByDeck({ deckKey, limit = 5, offset = 0 }) {
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
-  const headers = { "Content-Type": "application/json" };
-  const qs = new URLSearchParams({ deck: deckKey, limit: String(limit), offset: String(offset), source: "all" }).toString();
+/* ============================ Page ============================ */
 
-  // Tenta com filtro server-side
-  const res = await fetch(`${API_BASE}/api/live/logs?${qs}`, { credentials: "include", headers });
-  let data = res.ok ? await res.json() : null;
-  let rows = Array.isArray(data?.rows) ? data.rows : [];
+function DecksLivePage() {
+  const [filter, setFilter] = useState("todos");
+  const [rows, setRows] = useState([]);          // manter "cru" vindo do endpoint
+  const [loading, setLoading] = useState(true);
 
-  // Se o servidor não filtrou corretamente ou retornou vazio, filtramos localmente
-  if (!rows.length || rows.some(r => !deckMatches(r, deckKey))) {
-    const resAll = await fetch(`${API_BASE}/api/live/logs?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&source=all`, { credentials: "include", headers });
-    const all = resAll.ok ? await resAll.json() : null;
-    const allRows = Array.isArray(all?.rows) ? all.rows : [];
-    rows = allRows.filter(r => deckMatches(r, deckKey));
-    data = all || { ok: true };
-  }
-
-  // Ordena por data (mais novo primeiro)
-  rows.sort((a, b) => Number(b.createdAt ?? b.ts ?? 0) - Number(a.createdAt ?? a.ts ?? 0));
-
-  return { ...data, rows, total: rows.length };
-}
-
-const PAGE_SIZE = 5;
-
-// ===== Página ===============================================================
-export default function DecksLivePage() {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  // Filtro simples
-  const [filter, setFilter] = useState("all");
-  const options = useMemo(() => (rows || []).map(r => r.deckKey || r.deck || "").filter(Boolean), [rows]);
-  const filtered = useMemo(() => {
-    if (filter === "all") return rows;
-    const fk = String(filter || "").toLowerCase();
-    return rows.filter(r => String(r.deckKey || r.deck || "").toLowerCase() === fk);
-  }, [rows, filter]);
-
-  // Colapso
-  const [expanded, setExpanded] = useState(null);
-  const [logsBusy, setLogsBusy] = useState(false);
-  const [logsErr, setLogsErr] = useState("");
-  const [logs, setLogs] = useState([]);
-  const [totalLogs, setTotalLogs] = useState(0);
-  const [page, setPage] = useState(0);
+  const [expanded, setExpanded] = useState(null);     // deckKey aberto (UX antiga)
+  const [logsByDeck, setLogsByDeck] = useState({});   // deckKey -> logs normalizados
+  const [loadingDeck, setLoadingDeck] = useState({}); // deckKey -> bool
 
   useEffect(() => {
-    let mounted = true;
+    let alive = true;
     (async () => {
-      setLoading(true);
-      setError("");
       try {
-        const resp = await listLiveDecks();
-        if (!mounted) return;
-        const arr = Array.isArray(resp?.rows || resp) ? (resp.rows || resp) : [];
-        setRows(arr);
-      } catch (e) {
-        if (mounted) setError(e?.message || String(e));
+        setLoading(true);
+        const data = await listLiveDecks();
+        if (alive) setRows(Array.isArray(data) ? data : []);
       } finally {
-        if (mounted) setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
-    return () => { mounted = false; };
+    return () => { alive = false; };
   }, []);
 
-  // Carrega logs ao expandir/paginar
-  useEffect(() => {
-    let mount = true;
-    if (!expanded) return;
-    setLogsBusy(true);
-    setLogsErr("");
-    fetchLogsByDeck({ deckKey: expanded, limit: PAGE_SIZE, offset: page*PAGE_SIZE })
-      .then((data) => {
-        if (!mount) return;
-        const items = Array.isArray(data?.rows) ? data.rows : [];
-        const mapped = items.map((x, i) => ({
-          id: x.id || x._id || x.logId || `${expanded}-${page}-${i}`,
-          date: formatDate(normalizeLogDate(x)),
-          opponent: x.opponent || x.opponentName || x.name || x.opponent_username || x.opponentUser || "",
-          oppDeck: x.oppDeck || x.opponentDeck || x.oppDeckName || x.opDeck || "",
-          result: x.result || x.outcome || x.r || "",
-        }));
-        setLogs(mapped);
-        setTotalLogs(Number(data?.total || mapped.length || 0));
-      })
-      .catch((e) => setLogsErr(e?.message || "Falha ao carregar logs"))
-      .finally(() => setLogsBusy(false));
-    return () => { mount = false; };
-  }, [expanded, page]);
+  async function expandDeck(deckKey) {
+    const isOpen = expanded === deckKey;
+    if (isOpen) { setExpanded(null); return; }
+    setExpanded(deckKey);
 
-  const totalPages = Math.max(1, Math.ceil((totalLogs || 0) / PAGE_SIZE));
+    if (!logsByDeck[deckKey]) {
+      try {
+        setLoadingDeck(prev => ({ ...prev, [deckKey]: true }));
+        const raw = await listLogsByDeck(deckKey);
+        const norm = raw.map(r => ({
+          id: r.id,
+          createdAt: r.createdAt ?? r.date ?? null,
+          dateISO: toDateISO(r.date || r.createdAt || r.dateISO),
+          opponent: r.opponent || r.opp || "-",
+          opponentDeck: r.opponentDeck || r.oppDeck || r.opponent_deck || "-",
+          result: String(r.result || r.r || "-").toUpperCase(),
+          // torneio
+          eventName: getTournamentNameFromLog(r),
+          tournamentId: getTournamentIdFromLog(r),
+        }))
+        .sort((a,b)=> String(b.createdAt||b.dateISO||"").localeCompare(String(a.createdAt||a.dateISO||"")));
+        setLogsByDeck(prev => ({ ...prev, [deckKey]: norm }));
+      } finally {
+        setLoadingDeck(prev => ({ ...prev, [deckKey]: false }));
+      }
+    }
+  }
+
+  const filtered = useMemo(() => {
+    const arr = [...rows];
+    // Se o endpoint já trouxer "wr" ou "counts", beleza; senão mantemos a ordem como vier.
+    // Se quiser ordenar por WR, dá pra calcular aqui usando a mesma contagem abaixo.
+    return arr;
+  }, [rows, filter]);
 
   return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto text-zinc-100">
-      <div className="mb-2"><BackButton to="#/tcg-live" label="Voltar ao TCG Live" /></div>
-      <h1 className="text-2xl md:text-3xl font-semibold">Decks (TCG Live)</h1>
-      <p className="text-zinc-400 text-sm mb-4">Desempenho por deck calculado a partir dos logs.</p>
+    <div className="min-h-screen w-full bg-zinc-950 text-zinc-100">
+      <div className="mx-auto max-w-6xl px-4 py-6">
+        <div className="mb-4">
+          <a href="#/tcg-live" className="text-sm text-zinc-400 hover:underline">Voltar ao TCG Live</a>
+        </div>
 
-      <header className="flex items-center justify-end gap-2 mb-3">
-        <label className="text-sm text-zinc-300">Filtrar:</label>
-        <select value={filter} onChange={e=>setFilter(e.target.value)} className="bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-sm">
-          <option value="all">Todos</option>
-          {options.map((d) => <option key={d} value={d}>{toTitleCase(d)}</option>)}
-        </select>
-      </header>
+        <header className="mb-4 flex items-center justify-between gap-3">
+          <h1 className="text-3xl font-semibold tracking-tight">Decks (TCG Live)</h1>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <span className="text-zinc-400">Filtrar:</span>
+            <select
+              value={filter}
+              onChange={e => setFilter(e.target.value)}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2 py-1"
+            >
+              <option value="todos">Todos</option>
+            </select>
+          </label>
+        </header>
 
-      {error && <div className="text-rose-400 text-sm mb-3">Erro: {error}</div>}
+        <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/50">
+          <table className="w-full text-sm">
+            <thead className="bg-zinc-900/70 text-zinc-400">
+              <tr>
+                <Th className="w-[40%]">Deck</Th>
+                <Th className="w-[20%]">Resultado</Th>
+                <Th className="w-[20%] text-center">Win Rate</Th>
+                <Th className="w-[20%] text-right">Ações</Th>
+              </tr>
+            </thead>
 
-      <div className="rounded-2xl bg-zinc-900/70 border border-zinc-800 shadow-lg overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="text-zinc-400 font-mono">
-            <tr className="border-b border-zinc-800/60">
-              <th className="px-4 py-3 text-left w-1/2">Deck</th>
-              <th className="px-4 py-3 text-left w-1/4">Resultado</th>
-              <th className="px-4 py-3 text-left w-1/6">Win Rate</th>
-              <th className="px-4 py-3 text-right w-[10%]">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(!filtered || filtered.length === 0) && !loading && (
-              <tr><td className="px-4 py-6 text-zinc-400" colSpan={4}>Nenhum deck ainda.</td></tr>
-            )}
-            {filtered?.map((r, i) => {
-              const countsRaw = (r.counts || r);
-              const counts = {
-                W: Number(countsRaw?.W ?? countsRaw?.w ?? countsRaw?.wins ?? r?.V ?? r?.v ?? 0),
-                L: Number(countsRaw?.L ?? countsRaw?.l ?? countsRaw?.losses ?? r?.L ?? r?.l ?? 0),
-                T: Number(countsRaw?.T ?? countsRaw?.t ?? countsRaw?.ties ?? countsRaw?.E ?? r?.D ?? r?.d ?? 0),
-              };
-              const wr = r.wr ?? wrFromCounts(counts);
-              const deckKey = r.deckKey || r.deck || `deck-${i}`;
-              const isOpen = expanded === deckKey;
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={4} className="px-4 py-10 text-center text-zinc-400">Carregando…</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={4} className="px-4 py-10 text-center text-zinc-400">Nenhum deck encontrado.</td></tr>
+              ) : filtered.map((r, i) => {
+                // ====> CONTAGEM COMO ERA ANTES (aceita várias variações)
+                const countsRaw = (r.counts || r);
+                const counts = {
+                  W: Number(countsRaw?.W ?? countsRaw?.w ?? countsRaw?.wins ?? r?.V ?? r?.v ?? 0),
+                  L: Number(countsRaw?.L ?? countsRaw?.l ?? countsRaw?.losses ?? r?.L ?? r?.l ?? 0),
+                  T: Number(countsRaw?.T ?? countsRaw?.t ?? countsRaw?.ties ?? countsRaw?.E ?? r?.D ?? r?.d ?? 0),
+                };
+                const wr = r.wr ?? wrFromCounts(counts);
+                const deckKey = r.deckKey || r.deck || r.key || r.name || `deck-${i}`;
+                const isOpen = expanded === deckKey;
 
-              return (
-                <React.Fragment key={deckKey}>
-                  <tr className="border-b border-zinc-800/60">
-                    <td className="px-4 py-3"><DeckLabel deckName={prettyDeckKey(deckKey)} pokemonHints={r.pokemons} /></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <CountChip label="W" value={counts.W} />
-                        <CountChip label="L" value={counts.L} />
-                        <CountChip label="E" value={counts.T} />
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{wr}%</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={()=>{
-                          if (isOpen) { setExpanded(null); setPage(0); return; }
-                          setExpanded(deckKey); setPage(0);
-                        }}
-                        className="inline-flex items-center rounded-xl border border-zinc-700 bg-zinc-800/60 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
-                      >
-                        {isOpen ? "Ocultar" : "Detalhes"}
-                      </button>
-                    </td>
-                  </tr>
-
-                  {isOpen && (
-                    <tr className="border-b border-zinc-800/60">
-                      <td colSpan={4} className="px-4 py-3 bg-zinc-950/40">
-                        <div className="mt-1 rounded-xl border border-zinc-800 bg-zinc-900/50 p-3">
-                          <div className="grid grid-cols-12 items-center gap-2 tracking-wide text-zinc-400 mt-1 pb-2 border-b border-zinc-800/60">
-                            <div className="col-span-2">Data</div>
-                            <div className="col-span-4">Oponente</div>
-                            <div className="col-span-4">Deck do Oponente</div>
-                            <div className="col-span-1 text-center">Resultado</div>
-                            <div className="col-span-1">Evento</div>
-                          </div>
-
-                          <div className="divide-y divide-zinc-900/60">
-                            {logsBusy && <div className="py-8 text-center text-zinc-400 text-sm">Carregando…</div>}
-                            {!logsBusy && !logsErr && logs.map(log => (
-                              <a key={log.id} href={`#/tcg-live/logs/${encodeURIComponent(log.id)}`} className="grid grid-cols-12 items-center gap-2 py-2 text-sm hover:bg-zinc-800/30 rounded-md">
-                                <div className="col-span-2">{log.date}</div>
-                                <div className="col-span-4">{log.opponent}</div>
-                                <div className="col-span-4"><DeckLabel deckName={prettyDeckKey(log.oppDeck || log.opponentDeck || "")} pokemonHints={log.opponentPokemons || log.oppPokemons} /></div>
-                                <div className="col-span-1 text-center">{renderWLChip(log.result)}</div>
-                                <div className="col-span-1">{/* evento entra depois */}</div>
-                              </a>
-                            ))}
-                            {!logsBusy && !logsErr && logs.length===0 && (
-                              <div className="py-8 text-center text-zinc-500 text-sm">Sem partidas</div>
-                            )}
-                            {!logsBusy && logsErr && (
-                              <div className="py-8 text-center text-rose-400 text-sm">{logsErr}</div>
-                            )}
-                          </div>
-
-                          {totalPages>1 && (
-                            <div className="flex justify-end items-center gap-2 pt-3">
-                              <span className="text-xs text-zinc-400">{totalLogs} partidas • Página {page+1} de {totalPages}</span>
-                              <div className="flex items-center gap-2">
-                                <button disabled={page<=0 || logsBusy}
-                                  onClick={()=>setPage(p=>Math.max(0,p-1))}
-                                  className="px-2 py-1 text-xs rounded-lg border border-zinc-700 bg-zinc-800/60 disabled:opacity-50">◀</button>
-                                <button disabled={(page+1)>=totalPages || logsBusy}
-                                  onClick={()=>setPage(p=>Math.min(totalPages-1,p+1))}
-                                  className="px-2 py-1 text-xs rounded-lg border border-zinc-700 bg-zinc-800/60 disabled:opacity-50">▶</button>
-                              </div>
-                            </div>
-                          )}
+                return (
+                  <React.Fragment key={deckKey}>
+                    <tr className="border-t border-zinc-800 hover:bg-zinc-900/50">
+                      <Td>
+                        <DeckLabel deckName={prettyDeckKey(deckKey)} pokemonHints={r.pokemons} />
+                      </Td>
+                      <Td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <CountChip label="W" value={counts.W} />
+                          <CountChip label="L" value={counts.L} />
+                          <CountChip label="E" value={counts.T} />
                         </div>
-                      </td>
+                      </Td>
+                      <Td className="text-center">{wr}%</Td>
+                      <Td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => expandDeck(deckKey)}
+                          className="inline-flex items-center rounded-xl border border-zinc-700 bg-zinc-800/60 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+                        >
+                          {isOpen ? "Ocultar" : "Detalhes"}
+                        </button>
+                      </Td>
                     </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+
+                    {isOpen && (
+                      <tr className="bg-zinc-950/60">
+                        <td colSpan={4} className="px-6 py-3">
+                          <div className="overflow-hidden rounded-xl border border-zinc-800">
+                            <table className="w-full text-sm">
+                              <thead className="border-b border-zinc-800 text-zinc-400">
+                                <tr>
+                                  <th className="px-3 py-2 text-left">Data</th>
+                                  <th className="px-3 py-2 text-left">Oponente</th>
+                                  <th className="px-3 py-2 text-left">Deck do Oponente</th>
+                                  <th className="px-3 py-2 text-center">Resultado</th>
+                                  <th className="px-3 py-2 text-left">Evento</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {loadingDeck[deckKey] ? (
+                                  <tr><td colSpan={5} className="px-3 py-6 text-center text-zinc-400">Carregando…</td></tr>
+                                ) : (logsByDeck[deckKey] || []).length === 0 ? (
+                                  <tr><td colSpan={5} className="px-3 py-6 text-center text-zinc-400">Sem partidas.</td></tr>
+                                ) : (logsByDeck[deckKey] || []).map((log) => {
+                                  const tName =
+                                    log.eventName ||
+                                    log.tournamentName ||
+                                    log.tournament ||
+                                    log.tournament_name ||
+                                    log.tourneyName ||
+                                    "";
+                                  const tId = log.tournamentId || log.tId || log.tournament_id || "";
+
+                                  return (
+                                    <tr key={log.id} className="border-b border-zinc-800">
+                                      <td className="px-3 py-2">
+                                        {toDateTimeBR(log.createdAt) ||
+                                          (log.dateISO ? `${log.dateISO.split("-").reverse().join("/")} , 00:00` : "-")}
+                                      </td>
+                                      <td className="px-3 py-2">{log.opponent || "-"}</td>
+                                      <td className="px-3 py-2">
+                                        <DeckLabel deckName={prettyDeckKey(log.opponentDeck || "-")} />
+                                      </td>
+                                      <td className="px-3 py-2 text-center">
+                                        <span
+                                          className={cls(
+                                            "px-2 py-0.5 rounded-md text-xs border",
+                                            log.result === "W"
+                                              ? "bg-emerald-500/10 text-emerald-300 border-emerald-700"
+                                              : log.result === "L"
+                                              ? "bg-rose-500/10 text-rose-300 border-rose-700"
+                                              : "bg-amber-500/10 text-amber-300 border-amber-700"
+                                          )}
+                                        >
+                                          {log.result || "-"}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        {tName ? (
+                                          tId ? (
+                                            <a className="hover:underline" href={`#/tcg-live/torneios/${tId}`}>
+                                              {tName}
+                                            </a>
+                                          ) : (
+                                            tName
+                                          )
+                                        ) : (
+                                          "-"
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
       </div>
     </div>
   );
 }
 
-// Placeholder para físico (mantido)
-export function DecksTCGFisicoPage() {
-  return (
-    <div className="p-4 md:p-6 max-w-6xl mx-auto text-zinc-100">
-      <h1 className="text-2xl md:text-3xl font-semibold mb-2">Decks (Físico)</h1>
-      <p className="text-zinc-400 text-sm">Integração pendente. Nenhum dado no momento.</p>
-      <div className="rounded-2xl bg-zinc-900/70 border border-zinc-800 shadow-lg p-4 mt-4 text-zinc-400">Em breve.</div>
-    </div>
-  );
+/* ============================ UI atoms ============================ */
+function Th({ children, className = "" }) {
+  return <th className={cls("px-4 py-3 text-left font-medium", className)}>{children}</th>;
 }
+function Td({ children, className = "" }) {
+  return <td className={cls("px-4 py-3 align-middle", className)}>{children}</td>;
+}
+
+/* ========= Exports ========= */
+export default DecksLivePage;
+// aliases para compatibilidade com imports nomeados do router
+export { DecksLivePage as DecksTCGLivePage, DecksLivePage as DecksTCGFisicoPage };

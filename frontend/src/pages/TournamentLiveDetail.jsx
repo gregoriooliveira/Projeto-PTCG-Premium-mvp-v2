@@ -2,26 +2,32 @@
 import { getLiveTournament } from "../services/api.js";
 import React, { useEffect, useState } from "react";
 import { CalendarDays, Trophy, ListChecks, Users, ChevronRight } from "lucide-react";
+import { getTournamentById } from "../services/tournamentsData";
 
 async function fetchTournament(id) {
+  if (typeof window === "undefined") return null;
+  const stored = getTournamentById(id);
+  if (stored) return stored;
   try {
-    return await getLiveTournament(id);
+    const res = await fetch(`/api/tournaments/${id}.json`);
+    if (!res.ok) return null;
+    return await res.json();
   } catch {
     return null;
   }
 }
 
 export default function TournamentLiveDetail({ id }) {
-  const [data, setData] = useState(null);
+  const [tournament, setTournament] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     (async () => {
       setLoading(true);
-      const d = await fetchTournament(id);
+      const data = await fetchTournament(id);
       if (active) {
-        setData(d);
+        setTournament(data);
         setLoading(false);
       }
     })();
@@ -31,12 +37,15 @@ export default function TournamentLiveDetail({ id }) {
   }, [id]);
 
   if (loading) return <div className="p-4">Carregando...</div>;
-  if (!data || !data.tournament) return <div className="p-4">Torneio não encontrado.</div>;
+  if (!tournament) return <div className="p-4">Torneio não encontrado.</div>;
 
-  const t = data.tournament;
-  const rounds = (data.rounds || []).map((r, i) => ({
+  const rounds = (tournament.rounds || []).map((r, i) => ({
     ...r,
-    id: r.id || r.logId || [t.tournamentId, r.round, i + 1].filter(Boolean).join("|"),
+    id:
+      r.id ||
+      [tournament.id, r.deck, r.opponent, r.gameOrder, i + 1]
+        .filter(Boolean)
+        .join("|"),
   }));
   const stats = {
     total: rounds.length,
@@ -52,17 +61,17 @@ export default function TournamentLiveDetail({ id }) {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold flex items-center gap-2">
           <Trophy className="w-5 h-5 text-yellow-400" />
-          {t.name}
+          {tournament.name}
         </h1>
         <div className="text-sm flex items-center gap-3 text-zinc-300">
           <div className="hidden md:flex items-center gap-2 text-zinc-400">
             <a className="hover:underline" href="#/tcg-live/torneios">Torneios</a>
             <ChevronRight className="w-4 h-4" />
-            <span className="text-zinc-200 font-medium">{t.name}</span>
+            <span className="text-zinc-200 font-medium">{tournament.name}</span>
           </div>
           <div className="flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-zinc-400" />
-            {new Date(t.dateISO).toLocaleDateString("pt-BR")}
+            {new Date(tournament.dateISO).toLocaleDateString("pt-BR")}
           </div>
         </div>
       </div>
@@ -105,24 +114,27 @@ export default function TournamentLiveDetail({ id }) {
           <table className="w-full table-fixed text-sm text-left text-zinc-300">
             <colgroup>
               <col className="w-1/12" />
-              <col className="w-5/12" />
+              <col className="w-4/12" />
               <col className="w-4/12" />
               <col className="w-2/12" />
+              <col className="w-1/12" />
             </colgroup>
             <thead className="text-zinc-400 border-b border-zinc-700">
               <tr>
                 <th className="py-1">Round</th>
+                <th className="py-1">Deck</th>
                 <th className="py-1">Oponente</th>
-                <th className="py-1">Deck do Oponente</th>
-                <th className="py-1 text-center">Resultado</th>
+                <th className="py-1">Order</th>
+                <th className="py-1 text-center">Result</th>
               </tr>
             </thead>
             <tbody>
               {rounds.map((r, i) => (
                 <tr key={r.id} className="border-b border-zinc-800">
                   <td className="py-2">R{i + 1}</td>
-                  <td className="py-2">{r.opponent || "-"}</td>
-                  <td className="py-2">{r.opponentDeck || "-"}</td>
+                  <td className="py-2">{r.deck}</td>
+                  <td className="py-2">{r.opponent}</td>
+                  <td className="py-2">{r.gameOrder}</td>
                   <td className="py-2 text-center"><ResultPill r={r.result} /></td>
                 </tr>
               ))}
