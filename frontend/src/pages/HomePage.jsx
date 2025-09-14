@@ -154,9 +154,10 @@ const TopOpponentsWidget = ({ home }) => {
           r.topDeck?.deckKey ||
           r.topDeckName ||
           r.topDeck?.name ||
+          r.opponentDeck ||
           r.deckName ||
           "";
-        const topDeckLabel = prettyDeckKey(topDeckName || "") || "—";
+        const topDeckLabel = prettyDeckKey(topDeckName) || topDeckName || "—";
         const topDeckPokemons = Array.isArray(r.topPokemons)
           ? r.topPokemons
           : Array.isArray(r.topDeck?.pokemons)
