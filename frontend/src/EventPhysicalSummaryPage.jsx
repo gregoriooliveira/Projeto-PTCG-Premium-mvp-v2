@@ -1,6 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
 import BackButton from "./components/BackButton";
 import PokemonAutocomplete from "./components/PokemonAutocomplete";
+import DeckLabel from "./components/DeckLabel.jsx";
+import DeckModal from "./components/DeckModal.jsx";
 import { getEvent } from "./eventsRepo.js";
 import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
@@ -212,8 +214,11 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
     date: "2025-08-20",
     type: "Locals",
     format: "SVI-WHT/BLK",
-    deckMonA: "Dragapult",
-    deckMonB: "",
+    deck: {
+      deckName: "",
+      pokemon1: "",
+      pokemon2: "",
+    },
   };
 
   // IMPORTANTE: manter dados no estado para edição sem mutar const
@@ -236,6 +241,7 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
 
   const [rounds, setRounds] = useState([]);
   const [editRoundIndex, setEditRoundIndex] = useState(null);
+  const [editingDeck, setEditingDeck] = useState(false);
 
   const isEditing = editRoundIndex !== null;
   const editingNumber = isEditing ? (rounds[editRoundIndex]?.number ?? (editRoundIndex + 1)) : null;
@@ -490,6 +496,23 @@ function validateAndSave() {
               {eventData.classification && eventData.classification !== "—" ? (
                 <div className="text-lg font-bold text-right mt-8">{eventData.classification}</div>
               ) : null}
+              {eventData.deck?.deckName && (
+                <div className="mt-2 flex justify-end">
+                  <DeckLabel
+                    deckName={eventData.deck.deckName}
+                    pokemonHints={[eventData.deck.pokemon1, eventData.deck.pokemon2]}
+                  />
+                </div>
+              )}
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  className="px-2 py-1 text-xs rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-800"
+                  onClick={() => setEditingDeck(true)}
+                >
+                  Deck
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -772,6 +795,17 @@ function validateAndSave() {
           </div>
         )}
       </div>
+
+      {editingDeck && (
+        <DeckModal
+          initialDeck={eventData.deck}
+          onCancel={() => setEditingDeck(false)}
+          onSave={(deck) => {
+            setEventData((prev) => ({ ...prev, deck }));
+            setEditingDeck(false);
+          }}
+        />
+      )}
 
       {/* Modal de edição do evento */}
       {editingEvent && (
