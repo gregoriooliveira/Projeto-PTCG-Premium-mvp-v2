@@ -30,5 +30,40 @@ npm run build
 npm run preview
 ```
 
-## New route
-Use `#/tcg-fisico/eventos/<id>` or `#/eventos/<id>` to open the Event Physical Summary Page. If you navigate programmatically, you can pass `history.pushState({eventFromProps: evento}, '', '#/tcg-fisico/eventos/'+evento.id)`.
+## Rotas `/tcg-fisico/*`
+As telas do TCG Físico vivem sob `#/tcg-fisico`:
+
+- `#/tcg-fisico` – visão geral
+- `#/tcg-fisico/eventos/:id` – resumo e rounds de um evento
+
+Navegação programática para a página de evento:
+
+```js
+history.pushState({ eventFromProps: evento }, '', `#/tcg-fisico/eventos/${evento.id}`);
+```
+
+Essas telas consomem os endpoints do backend em `/api/physical/*`. Exemplo de criação de evento:
+
+```http
+POST /api/physical/events
+Content-Type: application/json
+
+{
+  "you": "Ash",
+  "opponent": "Gary",
+  "deckName": "Chien-Pao/Baxcalibur",
+  "opponentDeck": "Miraidon",
+  "result": "W",
+  "round": 1,
+  "pokemons": ["chien-pao-ex", "baxcalibur"]
+}
+```
+
+Resposta: `201 { "eventId": "abc123" }`.
+
+## Deck modal e PokéAPI
+O componente `DeckModal` permite informar o nome do deck e até dois Pokémon. Ele usa `PokemonAutocomplete`, que consulta
+`/api/pokedex/search` no backend (proxy para a PokéAPI com cache).
+
+Os slugs dos Pokémon escolhidos são enviados junto com o evento (`pokemons: ["chien-pao-ex", "baxcalibur"]`) e o backend os
+persiste para reaproveitar avatares e agregações.
