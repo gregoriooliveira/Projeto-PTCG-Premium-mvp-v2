@@ -68,14 +68,22 @@ function getTournamentIdFromLog(r) {
   return r?.tournamentId || r?.tId || r?.tournament_id || "";
 }
 
+/** Normaliza separadores “/” repetidos: "A / / B" -> "A / B", remove barras nas pontas e ajusta espaços. */
+function collapseSlashes(name) {
+  return String(name ?? "")
+    .replace(/(?:\s*\/\s*){2,}/g, " / ")  // colapsa 2+ grupos de “/”
+    .replace(/\s*\/\s*/g, " / ")          // normaliza espaços ao redor de “/”
+    .replace(/^\s*\/\s*|\s*\/\s*$/g, "")  // tira barra no começo/fim
+    .replace(/\s{2,}/g, " ")              // remove espaços duplos
+    .trim();
+}
+
 /* ============================ API wrappers ============================ */
 
 async function listLiveDecks() {
-  // Deixe os dados "crus" — vamos fazer a contagem na renderização (como era antes)
   const d1 = await tryJson(`${API}/api/live/decks`);
   if (Array.isArray(d1) && d1.length) return d1;
 
-  // Fallback: deriva dos logs (se o endpoint de decks não existir)
   const logs = await tryJson(`${API}/api/live/logs?limit=2000`);
   const rows = safeArray(logs?.rows || logs).filter(r =>
     (r.source || r.origin || "live").toLowerCase().includes("live")
@@ -118,12 +126,12 @@ function CountChip({ label, value }) {
 
 function DecksLivePage() {
   const [filter, setFilter] = useState("todos");
-  const [rows, setRows] = useState([]);          // manter "cru" vindo do endpoint
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [expanded, setExpanded] = useState(null);     // deckKey aberto (UX antiga)
-  const [logsByDeck, setLogsByDeck] = useState({});   // deckKey -> logs normalizados
-  const [loadingDeck, setLoadingDeck] = useState({}); // deckKey -> bool
+  const [expanded, setExpanded] = useState(null);
+  const [logsByDeck, setLogsByDeck] = useState({});
+  const [loadingDeck, setLoadingDeck] = useState({});
 
   useEffect(() => {
     let alive = true;
@@ -155,7 +163,6 @@ function DecksLivePage() {
           opponent: r.opponent || r.opp || "-",
           opponentDeck: r.opponentDeck || r.oppDeck || r.opponent_deck || "-",
           result: String(r.result || r.r || "-").toUpperCase(),
-          // torneio
           eventName: getTournamentNameFromLog(r),
           tournamentId: getTournamentIdFromLog(r),
         }))
@@ -169,8 +176,6 @@ function DecksLivePage() {
 
   const filtered = useMemo(() => {
     const arr = [...rows];
-    // Se o endpoint já trouxer "wr" ou "counts", beleza; senão mantemos a ordem como vier.
-    // Se quiser ordenar por WR, dá pra calcular aqui usando a mesma contagem abaixo.
     return arr;
   }, [rows, filter]);
 
@@ -212,7 +217,6 @@ function DecksLivePage() {
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={4} className="px-4 py-10 text-center text-zinc-400">Nenhum deck encontrado.</td></tr>
               ) : filtered.map((r, i) => {
-                // ====> CONTAGEM COMO ERA ANTES (aceita várias variações)
                 const countsRaw = (r.counts || r);
                 const counts = {
                   W: Number(countsRaw?.W ?? countsRaw?.w ?? countsRaw?.wins ?? r?.V ?? r?.v ?? 0),
@@ -277,30 +281,84 @@ function DecksLivePage() {
                                     "";
                                   const tId = log.tournamentId || log.tId || log.tournament_id || "";
 
+                                  const logHref = log?.id ? `#/tcg-live/logs/${encodeURIComponent(log.id)}` : null;
+
+                                  // <<<<< CORREÇÃO: colapsa “/ /” antes de renderizar >>>>>
+                                  const oppDeckDisplay = collapseSlashes(
+                                    prettyDeckKey(log.opponentDeck || "-")
+                                  );
+
                                   return (
-                                    <tr key={log.id} className="border-b border-zinc-800">
+                                    <tr key={log.id} className="border-b border-zinc-800 hover:bg-zinc-900/50">
+                                      {/* Data -> link para o log */}
                                       <td className="px-3 py-2">
-                                        {toDateTimeBR(log.createdAt) ||
-                                          (log.dateISO ? `${log.dateISO.split("-").reverse().join("/")} , 00:00` : "-")}
+                                        {logHref ? (
+                                          <a href={logHref} className="block hover:underline">
+                                            {toDateTimeBR(log.createdAt) ||
+                                              (log.dateISO ? `${log.dateISO.split("-").reverse().join("/")} , 00:00` : "-")}
+                                          </a>
+                                        ) : (
+                                          toDateTimeBR(log.createdAt) ||
+                                          (log.dateISO ? `${log.dateISO.split("-").reverse().join("/")} , 00:00` : "-")
+                                        )}
                                       </td>
-                                      <td className="px-3 py-2">{log.opponent || "-"}</td>
+
+                                      {/* Oponente -> link para o log */}
                                       <td className="px-3 py-2">
-                                        <DeckLabel deckName={prettyDeckKey(log.opponentDeck || "-")} />
+                                        {logHref ? (
+                                          <a href={logHref} className="block hover:underline">
+                                            {log.opponent || "-"}
+                                          </a>
+                                        ) : (
+                                          log.opponent || "-"
+                                        )}
                                       </td>
+
+                                      {/* Deck do Oponente -> link para o log (com normalização) */}
+                                      <td className="px-3 py-2">
+                                        {logHref ? (
+                                          <a href={logHref} className="block hover:underline">
+                                            <DeckLabel deckName={oppDeckDisplay} />
+                                          </a>
+                                        ) : (
+                                          <DeckLabel deckName={oppDeckDisplay} />
+                                        )}
+                                      </td>
+
+                                      {/* Resultado -> link para o log */}
                                       <td className="px-3 py-2 text-center">
-                                        <span
-                                          className={cls(
-                                            "px-2 py-0.5 rounded-md text-xs border",
-                                            log.result === "W"
-                                              ? "bg-emerald-500/10 text-emerald-300 border-emerald-700"
-                                              : log.result === "L"
-                                              ? "bg-rose-500/10 text-rose-300 border-rose-700"
-                                              : "bg-amber-500/10 text-amber-300 border-amber-700"
-                                          )}
-                                        >
-                                          {log.result || "-"}
-                                        </span>
+                                        {logHref ? (
+                                          <a href={logHref} className="inline-block hover:underline">
+                                            <span
+                                              className={cls(
+                                                "px-2 py-0.5 rounded-md text-xs border",
+                                                log.result === "W"
+                                                  ? "bg-emerald-500/10 text-emerald-300 border-emerald-700"
+                                                  : log.result === "L"
+                                                  ? "bg-rose-500/10 text-rose-300 border-rose-700"
+                                                  : "bg-amber-500/10 text-amber-300 border-amber-700"
+                                              )}
+                                            >
+                                              {log.result || "-"}
+                                            </span>
+                                          </a>
+                                        ) : (
+                                          <span
+                                            className={cls(
+                                              "px-2 py-0.5 rounded-md text-xs border",
+                                              log.result === "W"
+                                                ? "bg-emerald-500/10 text-emerald-300 border-emerald-700"
+                                                : log.result === "L"
+                                                ? "bg-rose-500/10 text-rose-300 border-rose-700"
+                                                : "bg-amber-500/10 text-amber-300 border-amber-700"
+                                            )}
+                                          >
+                                            {log.result || "-"}
+                                          </span>
+                                        )}
                                       </td>
+
+                                      {/* Evento -> mantém link para torneio (quando houver) */}
                                       <td className="px-3 py-2">
                                         {tName ? (
                                           tId ? (
@@ -344,5 +402,4 @@ function Td({ children, className = "" }) {
 
 /* ========= Exports ========= */
 export default DecksLivePage;
-// aliases para compatibilidade com imports nomeados do router
 export { DecksLivePage as DecksTCGLivePage, DecksLivePage as DecksTCGFisicoPage };
