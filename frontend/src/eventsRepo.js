@@ -1,6 +1,7 @@
 import { api } from "./services/api.js";
+import { getPhysicalEvent, postPhysicalEvent } from "./services/physicalApi.js";
 
-const API_BASE = '/api/events';
+const API_BASE = '/api/physical/events';
 
 let migrationDone = false;
 async function migrateLegacy() {
@@ -34,7 +35,7 @@ export async function getAllEvents() {
 
 export async function getEvent(id) {
   try {
-    return await api(`${API_BASE}/${encodeURIComponent(id)}`);
+    return await getPhysicalEvent(id);
   } catch (err) {
     console.warn('Falha ao obter evento', err);
     return null;
@@ -43,7 +44,7 @@ export async function getEvent(id) {
 
 export async function createEvent(ev) {
   try {
-    return await api(API_BASE, { method: 'POST', body: JSON.stringify(ev) });
+    return await postPhysicalEvent(ev);
   } catch (err) {
     console.warn('Falha ao salvar evento', err);
     throw err;

@@ -4,6 +4,7 @@ import PokemonAutocomplete from "./components/PokemonAutocomplete";
 import DeckLabel from "./components/DeckLabel.jsx";
 import DeckModal from "./components/DeckModal.jsx";
 import { getEvent } from "./eventsRepo.js";
+import { postPhysicalRound } from "./services/physicalApi.js";
 import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
 // helper: get store slug from hash query
@@ -368,7 +369,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     setEditRoundIndex(idx);
     try{ document.getElementById("round-form")?.scrollIntoView({behavior:"smooth"}); }catch{}
   }
-function validateAndSave() {
+  async function validateAndSave() {
   // Regra: Se ID selecionado, oponente é obrigatório; deck não é obrigatório
   if (form.id) {
     if (!form.opponent || !form.opponent.trim()) {
@@ -402,15 +403,26 @@ function validateAndSave() {
       flags: { noShow: form.noShow, bye: form.bye, id: form.id },
     };
 
-    if (editRoundIndex !== null) {
-      setRounds((rs) => rs.map((it, i) => i === editRoundIndex ? { ...round, id: it.id, number: it.number } : it));
-      setEditRoundIndex(null);
+    try {
+      const saved = await postPhysicalRound(eventData.id, round);
+      const finalRound = { ...round, ...(saved || {}) };
+      if (editRoundIndex !== null) {
+        setRounds((rs) =>
+          rs.map((it, i) =>
+            i === editRoundIndex
+              ? { ...finalRound, id: finalRound.id || it.id, number: finalRound.number || it.number }
+              : it
+          )
+        );
+        setEditRoundIndex(null);
+      } else {
+        setRounds((rs) => [...rs, finalRound]);
+        if (rounds.length === 0) setShowForm(false);
+      }
       resetForm();
-      return;
+    } catch (e) {
+      console.warn("Falha ao salvar round", e);
     }
-    setRounds((rs) => [...rs, round]);
-    if (rounds.length === 0) setShowForm(false); // recolhe após primeiro round
-    resetForm();
   }
 
   function rowToneFor(res) {
