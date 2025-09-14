@@ -25,6 +25,7 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
   const setOpen = (v) => {
     if (!isControlled) setOpenState(v);
     if (typeof onOpenChange === "function") onOpenChange(v);
+    if (!v) setServerError("");
   };
 
   useImperativeHandle(ref, () => ({
@@ -112,6 +113,7 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     tipo === "Regional" || tipo === "Internacional" || tipo === "Mundial";
 
   const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState("");
 
   const validate = () => {
     const e = {};
@@ -147,22 +149,23 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
       createdAt: new Date().toISOString(),
     };
 
-    let eventId = null;
+    setServerError("");
+
     try {
-      ({ eventId } = await createEvent(payload));
+      const { eventId } = await createEvent(payload);
       if (import.meta?.env?.DEV)
         console.info("[ptcg] evento salvo", { ...payload, eventId });
+
+      if (typeof onCreated === "function")
+        onCreated({ ...payload, eventId });
+
+      if (eventId) location.hash = `#/eventos/${eventId}`;
+
+      setOpen(false);
     } catch (err) {
       console.warn("Falha ao salvar evento no servidor", err);
+      setServerError("Não foi possível criar o evento. Tente novamente.");
     }
-
-    if (typeof onCreated === "function") onCreated({ ...payload, eventId });
-
-    try {
-      if (eventId) location.hash = `#/eventos/${eventId}`;
-    } catch {}
-
-    setOpen(false);
   };
 
   const InputLabel = ({ label, error, children }) => (
@@ -210,6 +213,11 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
             >
               Novo Registro de Evento
             </h2>
+            {serverError && (
+              <div className="mb-2 p-2 text-sm text-red-400 bg-red-950/30 border border-red-600 rounded">
+                {serverError}
+              </div>
+            )}
 
             <form onSubmit={onSubmit} className="grid gap-4">
               <div className="grid grid-cols-2 gap-3">
