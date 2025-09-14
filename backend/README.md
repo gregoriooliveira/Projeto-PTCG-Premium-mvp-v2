@@ -1,4 +1,4 @@
-# PTCG Backend — TCG Live endpoints
+# PTCG Backend — TCG Live e Físico
 
 ## Rodar em dev (com Firestore Emulator)
 
@@ -91,6 +91,45 @@ fetch('/api/live/events', {
 - `GET    /api/live/tournaments/:id`
 
 Agregações (dias, decks, oponentes, torneios) são atualizadas **on write** pelo servidor.
+
+### Endpoints `/api/physical/*`
+
+Principais rotas para eventos do TCG Físico (espelham as de Live):
+
+- `POST   /api/physical/events`
+- `GET    /api/physical/events/:id`
+- `PATCH  /api/physical/events/:id`
+- `DELETE /api/physical/events/:id`
+- `GET    /api/physical/summary?limitDays=5`
+- `GET    /api/physical/days/:date`
+- `GET    /api/physical/decks`
+
+Exemplo de criação de evento:
+
+```http
+POST /api/physical/events
+Content-Type: application/json
+
+{
+  "you": "Ash",
+  "opponent": "Gary",
+  "deckName": "Chien-Pao/Baxcalibur",
+  "opponentDeck": "Miraidon",
+  "result": "W",
+  "round": 1,
+  "pokemons": ["chien-pao-ex", "baxcalibur"]
+}
+```
+
+Resposta: `201 { "eventId": "abc123" }`.
+
+### Pokédex e persistência de Pokémon
+
+As rotas `/api/pokedex/search` e `/api/pokedex/by-slug/:slug` consultam a PokéAPI e
+armazenam os resultados em cache no Firestore.
+
+Eventos físicos aceitam um campo `pokemons` com até dois slugs. Esses valores são
+persistidos junto ao evento e reaproveitados para avatares e agregações.
 
 ## Sessão em memória
 
