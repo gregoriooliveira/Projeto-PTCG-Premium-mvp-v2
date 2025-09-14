@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import BackButton from "./components/BackButton";
+import PokemonAutocomplete from "./components/PokemonAutocomplete";
 import { getEvent } from "./eventsRepo.js";
 
 // helper: get store slug from hash query
@@ -53,27 +54,6 @@ const RESULT_COLORS = {
   E: "bg-amber-500 text-black",
 };
 
-const DEFAULT_POKEMON_LIST = [
-  "Charizard",
-  "Mega-Charizard",
-  "Blastoise",
-  "Mega-Blastoise",
-  "Venusaur",
-  "Mega-Venusaur",
-  "Pikachu",
-  "Raichu",
-  "Mewtwo",
-  "Mew",
-  "Dragapult",
-  "Dusknoir",
-  "Gardevoir",
-  "Raging Bolt",
-  "Joltik",
-  "Golurk",
-  "Greninja",
-  "Radiant Greninja",
-];
-
 function cn(...xs) {
   return xs.filter(Boolean).join(" ");
 }
@@ -84,21 +64,6 @@ function Labeled({ label, children }) {
       <span className="text-xs uppercase tracking-wide opacity-70">{label}</span>
       {children}
     </label>
-  );
-}
-
-function Select({ value, onChange, options, placeholder = "Selecione" }) {
-  return (
-    <select
-      className="border rounded-xl px-3 py-2 bg-white/70 dark:bg-neutral-900/60 shadow-inner w-full"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">{placeholder}</option>
-      {options.map((o) => (
-        <option key={o} value={o}>{o}</option>
-      ))}
-    </select>
   );
 }
 
@@ -173,11 +138,13 @@ function TagToggle({ active, onClick, children }) {
 
 // ---------- Domain helpers ----------
 function normalizePokemonPair(p1, p2) {
-  if (!p1 && !p2) return "";
-  if (p1 && !p2) return p1;
-  if (!p1 && p2) return p2;
-  const [a, b] = [p1, p2].sort((x, y) => x.localeCompare(y));
-  return `${a}/${b}`;
+  const a = p1?.slug || p1?.name || p1;
+  const b = p2?.slug || p2?.name || p2;
+  if (!a && !b) return "";
+  if (a && !b) return a;
+  if (!a && b) return b;
+  const [x, y] = [a, b].sort((i, j) => i.localeCompare(j));
+  return `${x}/${y}`;
 }
 
 function computeMatchResult(games) {
@@ -204,10 +171,7 @@ function computeTournamentWinRate(V, D, E) {
   return Math.round(((V + 0.5 * E) / total) * 100);
 }
 
-export default function EventPhysicalSummaryPage({
-  eventFromProps,
-  pokemonList = DEFAULT_POKEMON_LIST,
-}) {
+export default function EventPhysicalSummaryPage({ eventFromProps }) {
   // --- Voltar ao dia (quando vier do resumo do dia) ---
   const __qsHash = React.useMemo(() => {
     try {
@@ -283,8 +247,8 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
   const [form, setForm] = useState({
     opponentName: "",
     opponentDeckName: "",
-    oppMonA: "",
-    oppMonB: "",
+    oppMonA: null,
+    oppMonB: null,
     g1: { result: "", order: "" },
     g2: { result: "", order: "" },
     g3: { result: "", order: "" },
@@ -308,8 +272,8 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     setForm({
       opponentName: "",
       opponentDeckName: "",
-      oppMonA: "",
-      oppMonB: "",
+      oppMonA: null,
+      oppMonB: null,
       g1: { result: "", order: "" },
       g2: { result: "", order: "" },
       g3: { result: "", order: "" },
@@ -363,8 +327,12 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     setForm({
       opponentName: r.opponentName || "",
       opponentDeckName: r.opponentDeckName || "",
-      oppMonA: r.oppMonA || "",
-      oppMonB: r.oppMonB || "",
+      oppMonA: r.oppMonA
+        ? (typeof r.oppMonA === "object" ? r.oppMonA : { slug: r.oppMonA, name: r.oppMonA })
+        : null,
+      oppMonB: r.oppMonB
+        ? (typeof r.oppMonB === "object" ? r.oppMonB : { slug: r.oppMonB, name: r.oppMonB })
+        : null,
       g1: { ...(r.g1||{result:"",order:""}) },
       g2: { ...(r.g2||{result:"",order:""}) },
       g3: { ...(r.g3||{result:"",order:""}) },
@@ -397,8 +365,8 @@ function validateAndSave() {
       number: rounds.length + 1,
       opponentName: form.opponentName.trim(),
       opponentDeckName: form.opponentDeckName.trim(),
-      oppMonA: form.oppMonA || "",
-      oppMonB: form.oppMonB || "",
+      oppMonA: form.oppMonA || null,
+      oppMonB: form.oppMonB || null,
       normOppDeckKey: normalizePokemonPair(form.oppMonA, form.oppMonB),
       g1: { ...form.g1 },
       g2: canShowGame2() ? { ...form.g2 } : { result: "", order: "" },
@@ -540,8 +508,12 @@ function validateAndSave() {
                 <span className="font-medium">{r.opponentName || "—"}</span>
               </div>
               <div className="col-span-4 flex items-center gap-2">
-                {r.oppMonA ? <DeckAvatar name={r.oppMonA} /> : null}
-                {r.oppMonB ? <DeckAvatar name={r.oppMonB} /> : null}
+                {r.oppMonA ? (
+                  <DeckAvatar name={typeof r.oppMonA === "object" ? r.oppMonA.name : r.oppMonA} />
+                ) : null}
+                {r.oppMonB ? (
+                  <DeckAvatar name={typeof r.oppMonB === "object" ? r.oppMonB.name : r.oppMonB} />
+                ) : null}
                 <span className="opacity-90">
                   {r.opponentDeckName || r.normOppDeckKey || (forcedW ? (r.flags?.noShow ? "No show" : "Bye") : "—")}
                 </span>
@@ -614,22 +586,19 @@ function validateAndSave() {
 
             {/* Deck oponente */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <Labeled label="Deck do Oponente (principal)">
-                <Select
-                  value={form.oppMonA}
-                  onChange={(v) => setForm((f) => ({ ...f, oppMonA: v }))}
-                  options={pokemonList}
-                  placeholder="Select pokemon..."
-                />
-              </Labeled>
-              <Labeled label="Deck do Oponente (secundário – opcional)">
-                <Select
-                  value={form.oppMonB}
-                  onChange={(v) => setForm((f) => ({ ...f, oppMonB: v }))}
-                  options={pokemonList}
-                  placeholder="Select pokemon..."
-                />
-              </Labeled>
+              <PokemonAutocomplete
+                label="Pokémon do Oponente (principal)"
+                required
+                value={form.oppMonA}
+                onChange={(p) => setForm((f) => ({ ...f, oppMonA: p }))}
+                placeholder="Selecione o Pokémon"
+              />
+              <PokemonAutocomplete
+                label="Pokémon do Oponente (secundário – opcional)"
+                value={form.oppMonB}
+                onChange={(p) => setForm((f) => ({ ...f, oppMonB: p }))}
+                placeholder="Selecione o Pokémon"
+              />
 
             </div>
 
