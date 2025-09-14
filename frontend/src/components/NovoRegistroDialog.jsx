@@ -17,7 +17,7 @@ import { createEvent } from "../eventsRepo.js";
  */
 const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
   { renderTrigger, open: openProp, onOpenChange, onCreated },
-  ref
+  ref,
 ) {
   const isControlled = typeof openProp === "boolean";
   const [openState, setOpenState] = useState(false);
@@ -37,7 +37,7 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     if (!open) return;
     const t = setTimeout(() => {
       const first = document.querySelector(
-        "#novo-registro-dialog input, #novo-registro-dialog select"
+        "#novo-registro-dialog input, #novo-registro-dialog select",
       );
       first?.focus?.();
     }, 0);
@@ -82,7 +82,14 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     "Regional",
   ].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
-  const formatos = ["Standard", "Expanded", "GLC", "For Fun", "Legacy", "Unlimited"];
+  const formatos = [
+    "Standard",
+    "Expanded",
+    "GLC",
+    "For Fun",
+    "Legacy",
+    "Unlimited",
+  ];
   const classificacoes = [
     "Não Classificado",
     "Abandono",
@@ -96,8 +103,13 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     "Campeão",
   ];
 
-  const exigeLoja = tipo === "Liga Local" || tipo === "CUP" || tipo === "Challenge" || tipo === "CLP";
-  const exigeCidade = tipo === "Regional" || tipo === "Internacional" || tipo === "Mundial";
+  const exigeLoja =
+    tipo === "Liga Local" ||
+    tipo === "CUP" ||
+    tipo === "Challenge" ||
+    tipo === "CLP";
+  const exigeCidade =
+    tipo === "Regional" || tipo === "Internacional" || tipo === "Mundial";
 
   const [errors, setErrors] = useState({});
 
@@ -125,9 +137,7 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     e?.preventDefault?.();
     if (!validate()) return;
 
-    const id = `evt_${Date.now()}`;
     const payload = {
-      id,
       dia: diaRef.current?.value || "",
       nome: nomeRef.current?.value || "",
       tipo,
@@ -137,17 +147,19 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
       createdAt: new Date().toISOString(),
     };
 
+    let eventId = null;
     try {
-      await createEvent(payload);
-      if (import.meta?.env?.DEV) console.info("[ptcg] evento salvo", payload);
+      ({ eventId } = await createEvent(payload));
+      if (import.meta?.env?.DEV)
+        console.info("[ptcg] evento salvo", { ...payload, eventId });
     } catch (err) {
       console.warn("Falha ao salvar evento no servidor", err);
     }
 
-    if (typeof onCreated === "function") onCreated(payload);
+    if (typeof onCreated === "function") onCreated({ ...payload, eventId });
 
     try {
-      location.hash = `#/eventos/${id}`;
+      if (eventId) location.hash = `#/eventos/${eventId}`;
     } catch {}
 
     setOpen(false);
@@ -224,12 +236,18 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
                   <select
                     value={tipo}
                     onChange={(e) => {
-                      const preserveNome = nomeRef.current ? nomeRef.current.value : "";
+                      const preserveNome = nomeRef.current
+                        ? nomeRef.current.value
+                        : "";
                       setTipo(e.target.value);
                       // limpar o campo ao lado quando trocar o tipo
-                      if (lojaCidadeRef.current) lojaCidadeRef.current.value = "";
+                      if (lojaCidadeRef.current)
+                        lojaCidadeRef.current.value = "";
                       // reatribui o nome após a atualização do tipo garantindo que o valor não se perca
-                      setTimeout(() => { if (nomeRef.current) nomeRef.current.value = preserveNome; }, 0);
+                      setTimeout(() => {
+                        if (nomeRef.current)
+                          nomeRef.current.value = preserveNome;
+                      }, 0);
                     }}
                     className="mt-1 w-full rounded-md bg-zinc-900 border border-zinc-800 px-3 py-2 text-zinc-100"
                   >
@@ -280,7 +298,7 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
                   </select>
                 </InputLabel>
 
-              <InputLabel label="Classificação" error={errors.classificacao}>
+                <InputLabel label="Classificação" error={errors.classificacao}>
                   <select
                     ref={classificacaoRef}
                     defaultValue=""
