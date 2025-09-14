@@ -1,6 +1,11 @@
 import React, { useMemo, useState, useEffect } from "react";
 import BackButton from "./components/BackButton";
+import PokemonAutocomplete from "./components/PokemonAutocomplete";
+import DeckLabel from "./components/DeckLabel.jsx";
+import DeckModal from "./components/DeckModal.jsx";
 import { getEvent } from "./eventsRepo.js";
+import { postPhysicalRound } from "./services/physicalApi.js";
+import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
 // helper: get store slug from hash query
 const getStoreFromHash = () => {
@@ -53,27 +58,6 @@ const RESULT_COLORS = {
   E: "bg-amber-500 text-black",
 };
 
-const DEFAULT_POKEMON_LIST = [
-  "Charizard",
-  "Mega-Charizard",
-  "Blastoise",
-  "Mega-Blastoise",
-  "Venusaur",
-  "Mega-Venusaur",
-  "Pikachu",
-  "Raichu",
-  "Mewtwo",
-  "Mew",
-  "Dragapult",
-  "Dusknoir",
-  "Gardevoir",
-  "Raging Bolt",
-  "Joltik",
-  "Golurk",
-  "Greninja",
-  "Radiant Greninja",
-];
-
 function cn(...xs) {
   return xs.filter(Boolean).join(" ");
 }
@@ -84,21 +68,6 @@ function Labeled({ label, children }) {
       <span className="text-xs uppercase tracking-wide opacity-70">{label}</span>
       {children}
     </label>
-  );
-}
-
-function Select({ value, onChange, options, placeholder = "Selecione" }) {
-  return (
-    <select
-      className="border rounded-xl px-3 py-2 bg-white/70 dark:bg-neutral-900/60 shadow-inner w-full"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">{placeholder}</option>
-      {options.map((o) => (
-        <option key={o} value={o}>{o}</option>
-      ))}
-    </select>
   );
 }
 
@@ -173,11 +142,13 @@ function TagToggle({ active, onClick, children }) {
 
 // ---------- Domain helpers ----------
 function normalizePokemonPair(p1, p2) {
-  if (!p1 && !p2) return "";
-  if (p1 && !p2) return p1;
-  if (!p1 && p2) return p2;
-  const [a, b] = [p1, p2].sort((x, y) => x.localeCompare(y));
-  return `${a}/${b}`;
+  const a = p1?.slug || p1?.name || p1;
+  const b = p2?.slug || p2?.name || p2;
+  if (!a && !b) return "";
+  if (a && !b) return a;
+  if (!a && b) return b;
+  const [x, y] = [a, b].sort((i, j) => i.localeCompare(j));
+  return `${x}/${y}`;
 }
 
 function computeMatchResult(games) {
@@ -204,10 +175,7 @@ function computeTournamentWinRate(V, D, E) {
   return Math.round(((V + 0.5 * E) / total) * 100);
 }
 
-export default function EventPhysicalSummaryPage({
-  eventFromProps,
-  pokemonList = DEFAULT_POKEMON_LIST,
-}) {
+export default function EventPhysicalSummaryPage({ eventFromProps }) {
   // --- Voltar ao dia (quando vier do resumo do dia) ---
   const __qsHash = React.useMemo(() => {
     try {
@@ -247,8 +215,11 @@ export default function EventPhysicalSummaryPage({
     date: "2025-08-20",
     type: "Locals",
     format: "SVI-WHT/BLK",
-    deckMonA: "Dragapult",
-    deckMonB: "",
+    deck: {
+      deckName: "",
+      pokemon1: "",
+      pokemon2: "",
+    },
   };
 
   // IMPORTANTE: manter dados no estado para edição sem mutar const
@@ -271,6 +242,7 @@ export default function EventPhysicalSummaryPage({
 
   const [rounds, setRounds] = useState([]);
   const [editRoundIndex, setEditRoundIndex] = useState(null);
+  const [editingDeck, setEditingDeck] = useState(false);
 
   const isEditing = editRoundIndex !== null;
   const editingNumber = isEditing ? (rounds[editRoundIndex]?.number ?? (editRoundIndex + 1)) : null;
@@ -283,14 +255,16 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
   const [form, setForm] = useState({
     opponentName: "",
     opponentDeckName: "",
-    oppMonA: "",
-    oppMonB: "",
+    oppMonA: null,
+    oppMonB: null,
     g1: { result: "", order: "" },
     g2: { result: "", order: "" },
     g3: { result: "", order: "" },
     noShow: false,
     bye: false,
   });
+
+  const [iconMap, setIconMap] = useState({});
 
   const stats = useMemo(() => {
     let V = 0, D = 0, E = 0, points = 0;
@@ -308,8 +282,8 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     setForm({
       opponentName: "",
       opponentDeckName: "",
-      oppMonA: "",
-      oppMonB: "",
+      oppMonA: null,
+      oppMonB: null,
       g1: { result: "", order: "" },
       g2: { result: "", order: "" },
       g3: { result: "", order: "" },
@@ -317,6 +291,23 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       bye: false,
     });
   }
+
+  useEffect(() => {
+    const slugs = [];
+    for (const r of rounds) {
+      const s1 = r.oppMonASlug || (typeof r.oppMonA === "object" ? r.oppMonA.slug : r.oppMonA);
+      const s2 = r.oppMonBSlug || (typeof r.oppMonB === "object" ? r.oppMonB.slug : r.oppMonB);
+      if (s1) slugs.push(s1);
+      if (s2) slugs.push(s2);
+    }
+    slugs.forEach((slug) => {
+      if (!(slug in iconMap)) {
+        getPokemonIcon(slug).then((src) => {
+          setIconMap((prev) => ({ ...prev, [slug]: src === FALLBACK ? null : src }));
+        });
+      }
+    });
+  }, [rounds, iconMap]);
 
   function setGame(idx, key, value) {
     setForm((f) => {
@@ -363,8 +354,12 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     setForm({
       opponentName: r.opponentName || "",
       opponentDeckName: r.opponentDeckName || "",
-      oppMonA: r.oppMonA || "",
-      oppMonB: r.oppMonB || "",
+      oppMonA: r.oppMonA
+        ? (typeof r.oppMonA === "object" ? r.oppMonA : { slug: r.oppMonA, name: r.oppMonA })
+        : null,
+      oppMonB: r.oppMonB
+        ? (typeof r.oppMonB === "object" ? r.oppMonB : { slug: r.oppMonB, name: r.oppMonB })
+        : null,
       g1: { ...(r.g1||{result:"",order:""}) },
       g2: { ...(r.g2||{result:"",order:""}) },
       g3: { ...(r.g3||{result:"",order:""}) },
@@ -374,7 +369,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     setEditRoundIndex(idx);
     try{ document.getElementById("round-form")?.scrollIntoView({behavior:"smooth"}); }catch{}
   }
-function validateAndSave() {
+  async function validateAndSave() {
   // Regra: Se ID selecionado, oponente é obrigatório; deck não é obrigatório
   if (form.id) {
     if (!form.opponent || !form.opponent.trim()) {
@@ -397,8 +392,10 @@ function validateAndSave() {
       number: rounds.length + 1,
       opponentName: form.opponentName.trim(),
       opponentDeckName: form.opponentDeckName.trim(),
-      oppMonA: form.oppMonA || "",
-      oppMonB: form.oppMonB || "",
+      oppMonA: form.oppMonA || null,
+      oppMonB: form.oppMonB || null,
+      oppMonASlug: form.oppMonA?.slug || (typeof form.oppMonA === "string" ? form.oppMonA : null),
+      oppMonBSlug: form.oppMonB?.slug || (typeof form.oppMonB === "string" ? form.oppMonB : null),
       normOppDeckKey: normalizePokemonPair(form.oppMonA, form.oppMonB),
       g1: { ...form.g1 },
       g2: canShowGame2() ? { ...form.g2 } : { result: "", order: "" },
@@ -406,15 +403,26 @@ function validateAndSave() {
       flags: { noShow: form.noShow, bye: form.bye, id: form.id },
     };
 
-    if (editRoundIndex !== null) {
-      setRounds((rs) => rs.map((it, i) => i === editRoundIndex ? { ...round, id: it.id, number: it.number } : it));
-      setEditRoundIndex(null);
+    try {
+      const saved = await postPhysicalRound(eventData.id, round);
+      const finalRound = { ...round, ...(saved || {}) };
+      if (editRoundIndex !== null) {
+        setRounds((rs) =>
+          rs.map((it, i) =>
+            i === editRoundIndex
+              ? { ...finalRound, id: finalRound.id || it.id, number: finalRound.number || it.number }
+              : it
+          )
+        );
+        setEditRoundIndex(null);
+      } else {
+        setRounds((rs) => [...rs, finalRound]);
+        if (rounds.length === 0) setShowForm(false);
+      }
       resetForm();
-      return;
+    } catch (e) {
+      console.warn("Falha ao salvar round", e);
     }
-    setRounds((rs) => [...rs, round]);
-    if (rounds.length === 0) setShowForm(false); // recolhe após primeiro round
-    resetForm();
   }
 
   function rowToneFor(res) {
@@ -500,6 +508,23 @@ function validateAndSave() {
               {eventData.classification && eventData.classification !== "—" ? (
                 <div className="text-lg font-bold text-right mt-8">{eventData.classification}</div>
               ) : null}
+              {eventData.deck?.deckName && (
+                <div className="mt-2 flex justify-end">
+                  <DeckLabel
+                    deckName={eventData.deck.deckName}
+                    pokemonHints={[eventData.deck.pokemon1, eventData.deck.pokemon2]}
+                  />
+                </div>
+              )}
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  className="px-2 py-1 text-xs rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-800"
+                  onClick={() => setEditingDeck(true)}
+                >
+                  Deck
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -524,6 +549,8 @@ function validateAndSave() {
           const resStr = forcedW
             ? "W"
             : `${r.g1.result || ""}${r.g2.result || ""}${r.g3.result || ""}`.trim();
+          const slugA = r.oppMonASlug || (typeof r.oppMonA === "object" ? r.oppMonA.slug : r.oppMonA);
+          const slugB = r.oppMonBSlug || (typeof r.oppMonB === "object" ? r.oppMonB.slug : r.oppMonB);
 
           return (
             <div
@@ -540,8 +567,18 @@ function validateAndSave() {
                 <span className="font-medium">{r.opponentName || "—"}</span>
               </div>
               <div className="col-span-4 flex items-center gap-2">
-                {r.oppMonA ? <DeckAvatar name={r.oppMonA} /> : null}
-                {r.oppMonB ? <DeckAvatar name={r.oppMonB} /> : null}
+                {r.oppMonA ? (
+                  <DeckAvatar
+                    name={typeof r.oppMonA === "object" ? r.oppMonA.name : r.oppMonA}
+                    src={iconMap[slugA] || undefined}
+                  />
+                ) : null}
+                {r.oppMonB ? (
+                  <DeckAvatar
+                    name={typeof r.oppMonB === "object" ? r.oppMonB.name : r.oppMonB}
+                    src={iconMap[slugB] || undefined}
+                  />
+                ) : null}
                 <span className="opacity-90">
                   {r.opponentDeckName || r.normOppDeckKey || (forcedW ? (r.flags?.noShow ? "No show" : "Bye") : "—")}
                 </span>
@@ -614,22 +651,19 @@ function validateAndSave() {
 
             {/* Deck oponente */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-              <Labeled label="Deck do Oponente (principal)">
-                <Select
-                  value={form.oppMonA}
-                  onChange={(v) => setForm((f) => ({ ...f, oppMonA: v }))}
-                  options={pokemonList}
-                  placeholder="Select pokemon..."
-                />
-              </Labeled>
-              <Labeled label="Deck do Oponente (secundário – opcional)">
-                <Select
-                  value={form.oppMonB}
-                  onChange={(v) => setForm((f) => ({ ...f, oppMonB: v }))}
-                  options={pokemonList}
-                  placeholder="Select pokemon..."
-                />
-              </Labeled>
+              <PokemonAutocomplete
+                label="Pokémon do Oponente (principal)"
+                required
+                value={form.oppMonA}
+                onChange={(p) => setForm((f) => ({ ...f, oppMonA: p }))}
+                placeholder="Selecione o Pokémon"
+              />
+              <PokemonAutocomplete
+                label="Pokémon do Oponente (secundário – opcional)"
+                value={form.oppMonB}
+                onChange={(p) => setForm((f) => ({ ...f, oppMonB: p }))}
+                placeholder="Selecione o Pokémon"
+              />
 
             </div>
 
@@ -773,6 +807,17 @@ function validateAndSave() {
           </div>
         )}
       </div>
+
+      {editingDeck && (
+        <DeckModal
+          initialDeck={eventData.deck}
+          onCancel={() => setEditingDeck(false)}
+          onSave={(deck) => {
+            setEventData((prev) => ({ ...prev, deck }));
+            setEditingDeck(false);
+          }}
+        />
+      )}
 
       {/* Modal de edição do evento */}
       {editingEvent && (
