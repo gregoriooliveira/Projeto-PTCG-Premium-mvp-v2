@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import liveRoutes from "./live/routes.js";
+import physicalRoutes from "./physical/routes.js";
 import homeRoutes from "./home/routes.js";
 import importRoutes from "./importing/routes.js";
 import eventsRoutes from "./events/routes.js";
@@ -63,6 +64,7 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 // Rotas
 app.use("/api/live", liveRoutes);
+app.use("/api/physical", physicalRoutes);
 app.use("/api", homeRoutes);
 app.use("/api", importRoutes);
 app.use("/api/events", eventsRoutes);
