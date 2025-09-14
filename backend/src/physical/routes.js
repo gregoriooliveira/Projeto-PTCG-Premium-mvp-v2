@@ -105,6 +105,92 @@ r.delete("/events/:id", authMiddleware, async (req, res) => {
   res.json({ ok:true });
 });
 
+function computeRoundResult(round = {}) {
+  const { g1 = {}, g2 = {}, g3 = {}, flags = {} } = round;
+  if (flags.bye || flags.noShow) return "W";
+  let v = 0, l = 0;
+  for (const g of [g1, g2, g3]) {
+    if (g.result === "V") v += 1;
+    else if (g.result === "D") l += 1;
+  }
+  if (v > l) return "W";
+  if (l > v) return "L";
+  return "T";
+}
+
+async function recomputeRoundsAgg(eventId) {
+  const col = db.collection("physicalEvents").doc(eventId).collection("rounds");
+  const snap = await col.get();
+  let counts = { W: 0, L: 0, T: 0 };
+  const byOpp = new Map();
+  const byDeck = new Map();
+  snap.forEach(d => {
+    const r = d.data() || {};
+    const c = countsOfResult(r.result);
+    counts = countsAdd(counts, c);
+    const opp = normalizeName(r.opponentName || "");
+    if (opp) {
+      const cur = byOpp.get(opp) || { W: 0, L: 0, T: 0 };
+      byOpp.set(opp, countsAdd(cur, c));
+    }
+    const deckKey = r.normOppDeckKey || normalizeDeckKey(r.opponentDeckName || "");
+    if (deckKey) {
+      const cur = byDeck.get(deckKey) || { W: 0, L: 0, T: 0 };
+      byDeck.set(deckKey, countsAdd(cur, c));
+    }
+  });
+  const wr = wrPercent(counts);
+  const opponentsAgg = [];
+  for (const [opponent, c] of byOpp.entries()) {
+    opponentsAgg.push({ opponent, counts: c, wr: wrPercent(c) });
+  }
+  const decksAgg = [];
+  for (const [deckKey, c] of byDeck.entries()) {
+    decksAgg.push({ deckKey, counts: c, wr: wrPercent(c) });
+  }
+  await db.collection("physicalEvents").doc(eventId).set({
+    stats: { counts, wr },
+    opponentsAgg,
+    decksAgg,
+    roundsCount: snap.size,
+  }, { merge: true });
+}
+
+r.post("/events/:eventId/rounds", authMiddleware, async (req, res) => {
+  try {
+    const eventId = String(req.params.eventId || "");
+    if (!eventId) return res.status(400).json({ error: "invalid_event" });
+    const body = req.body || {};
+    if (!body.g1 || !body.g1.result || !body.g1.order) {
+      return res.status(400).json({ error: "invalid_round" });
+    }
+    const roundId = nanoid();
+    const roundDoc = {
+      roundId,
+      number: body.number || null,
+      opponentName: normalizeName(body.opponentName || ""),
+      opponentDeckName: normalizeName(body.opponentDeckName || ""),
+      oppMonA: body.oppMonA || null,
+      oppMonB: body.oppMonB || null,
+      oppMonASlug: body.oppMonASlug || null,
+      oppMonBSlug: body.oppMonBSlug || null,
+      normOppDeckKey: body.normOppDeckKey || normalizeDeckKey(body.opponentDeckName || ""),
+      g1: body.g1 || {},
+      g2: body.g2 || {},
+      g3: body.g3 || {},
+      flags: body.flags || {},
+    };
+    roundDoc.result = computeRoundResult(roundDoc);
+    await db.collection("physicalEvents").doc(eventId)
+      .collection("rounds").doc(roundId).set(roundDoc);
+    await recomputeRoundsAgg(eventId);
+    return res.status(201).json({ roundId, ...roundDoc });
+  } catch (e) {
+    console.error("[POST /physical/events/:eventId/rounds]", e);
+    return res.status(500).json({ error: "round_create_failed" });
+  }
+});
+
 /** Summary for /tcg-physical */
 
 /** List recent events for widgets */
