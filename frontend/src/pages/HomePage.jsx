@@ -149,15 +149,26 @@ const TopOpponentsWidget = ({ home }) => {
       {rows.map((r, i) => {
         const counts = r.counts || { W: 0, L: 0, T: 0 };
         const wr = typeof r.wr === "number" ? r.wr : 0;
-        const topDeckKey = r?.topDeck?.deckKey || "";
-        const topDeckPokemons = Array.isArray(r?.topDeck?.pokemons) ? r.topDeck.pokemons : undefined;
+        const topDeckName =
+          r.topDeckKey ||
+          r.topDeck?.deckKey ||
+          r.topDeckName ||
+          r.topDeck?.name ||
+          r.deckName ||
+          "";
+        const topDeckLabel = prettyDeckKey(topDeckName || "") || "—";
+        const topDeckPokemons = Array.isArray(r.topPokemons)
+          ? r.topPokemons
+          : Array.isArray(r.topDeck?.pokemons)
+            ? r.topDeck.pokemons
+            : undefined;
         return (
           <div key={i} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
             <div className="col-span-3 truncate">{r.opponentName}</div>
             <div className="col-span-3 text-center"><Pill>{wr}%</Pill></div>
             <div className="col-span-2 text-center"><WLTriplet {...counts} /></div>
             <div className="col-span-4 flex items-center justify-center">
-              <DeckLabel deckName={prettyDeckKey(topDeckKey) || "—"} pokemonHints={topDeckPokemons} />
+              <DeckLabel deckName={topDeckLabel} pokemonHints={topDeckPokemons} />
             </div>
           </div>
         );
