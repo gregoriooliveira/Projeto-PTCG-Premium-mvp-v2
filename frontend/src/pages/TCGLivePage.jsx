@@ -1,7 +1,6 @@
 
 import React, { useEffect, useState } from "react";
-// Mantive somente o officialArtworkUrl (o getLiveSummary não existe no back atual)
-import { officialArtworkUrl } from "../services/api.js";
+import { officialArtworkUrl, getLiveSummary, api } from "../services/api.js";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import ResumoGeralWidget from "../components/widgets/ResumoGeralWidget.jsx";
 import { Trophy, List, ClipboardList } from "lucide-react";
@@ -153,7 +152,15 @@ export default function TCGLivePage() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      // 1) Tenta endpoint de HOME (mesma agregação da home)
+      // 1) Novo endpoint de resumo
+      try {
+        const data = await getLiveSummary();
+        const events = await api(`/api/live/events?limit=200`).catch(() => []);
+        if (alive) setSummary({ ...data, recentLogs: events });
+        return;
+      } catch {}
+
+      // 2) Fallback legado
       const home = await tryJson(`${API}/api/home?source=all&limit=5`)
                || await tryJson(`${API}/api/live/home?source=all&limit=5`);
       if (home) {
@@ -161,7 +168,7 @@ export default function TCGLivePage() {
         if (alive) setSummary(norm);
         return;
       }
-      // 2) Fallback: agrega a partir dos logs LIVE
+      // 3) Fallback: agrega a partir dos logs LIVE
       const logs = await tryJson(`${API}/api/live/logs?source=all&limit=200`)
                 || await tryJson(`${API}/api/live/logs?limit=200`);
       const norm = normalizeFromLogs(logs || {});
