@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
+import Toast from "./components/Toast.jsx";
 import BackButton from "./components/BackButton";
 import PokemonAutocomplete from "./components/PokemonAutocomplete";
 import DeckLabel from "./components/DeckLabel.jsx";
@@ -176,6 +177,8 @@ function computeTournamentWinRate(V, D, E) {
 }
 
 export default function EventPhysicalSummaryPage({ eventFromProps }) {
+  const [toast, setToast] = useState({ message: "", type: "info" });
+  const showToast = (message, type = "info") => setToast({ message, type });
   // --- Voltar ao dia (quando vier do resumo do dia) ---
   const __qsHash = React.useMemo(() => {
     try {
@@ -405,7 +408,12 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
 
     try {
       const saved = await postPhysicalRound(eventData.id, round);
-      const finalRound = { ...round, ...(saved || {}) };
+      const finalRound = {
+        ...round,
+        ...(saved || {}),
+        id: saved?.roundId || saved?.id || round.id,
+        number: saved?.number || round.number,
+      };
       if (editRoundIndex !== null) {
         setRounds((rs) =>
           rs.map((it, i) =>
@@ -422,6 +430,8 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       resetForm();
     } catch (e) {
       console.warn("Falha ao salvar round", e);
+      const msg = e?.message || "Falha ao salvar round";
+      showToast(msg, "error");
     }
   }
 
@@ -434,6 +444,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
   const matchPreview = currentMatchPreview();
 
   return (
+    <>
     <div className="p-4 md:p-6 lg:p-8 max-w-5xl mx-auto">
       {/* Voltar à loja (visível se ?store=) */}
 {__fromStore && (
@@ -887,5 +898,11 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
         </div>
       )}
     </div>
+    <Toast
+      message={toast.message}
+      type={toast.type}
+      onClose={() => setToast({ message: "", type: "info" })}
+    />
+    </>
   );
 }
