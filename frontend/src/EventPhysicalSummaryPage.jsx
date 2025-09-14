@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from "react";
 import BackButton from "./components/BackButton";
 import PokemonAutocomplete from "./components/PokemonAutocomplete";
 import { getEvent } from "./eventsRepo.js";
+import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
 // helper: get store slug from hash query
 const getStoreFromHash = () => {
@@ -256,6 +257,8 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     bye: false,
   });
 
+  const [iconMap, setIconMap] = useState({});
+
   const stats = useMemo(() => {
     let V = 0, D = 0, E = 0, points = 0;
     for (const r of rounds) {
@@ -281,6 +284,23 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       bye: false,
     });
   }
+
+  useEffect(() => {
+    const slugs = [];
+    for (const r of rounds) {
+      const s1 = r.oppMonASlug || (typeof r.oppMonA === "object" ? r.oppMonA.slug : r.oppMonA);
+      const s2 = r.oppMonBSlug || (typeof r.oppMonB === "object" ? r.oppMonB.slug : r.oppMonB);
+      if (s1) slugs.push(s1);
+      if (s2) slugs.push(s2);
+    }
+    slugs.forEach((slug) => {
+      if (!(slug in iconMap)) {
+        getPokemonIcon(slug).then((src) => {
+          setIconMap((prev) => ({ ...prev, [slug]: src === FALLBACK ? null : src }));
+        });
+      }
+    });
+  }, [rounds, iconMap]);
 
   function setGame(idx, key, value) {
     setForm((f) => {
@@ -367,6 +387,8 @@ function validateAndSave() {
       opponentDeckName: form.opponentDeckName.trim(),
       oppMonA: form.oppMonA || null,
       oppMonB: form.oppMonB || null,
+      oppMonASlug: form.oppMonA?.slug || (typeof form.oppMonA === "string" ? form.oppMonA : null),
+      oppMonBSlug: form.oppMonB?.slug || (typeof form.oppMonB === "string" ? form.oppMonB : null),
       normOppDeckKey: normalizePokemonPair(form.oppMonA, form.oppMonB),
       g1: { ...form.g1 },
       g2: canShowGame2() ? { ...form.g2 } : { result: "", order: "" },
@@ -492,6 +514,8 @@ function validateAndSave() {
           const resStr = forcedW
             ? "W"
             : `${r.g1.result || ""}${r.g2.result || ""}${r.g3.result || ""}`.trim();
+          const slugA = r.oppMonASlug || (typeof r.oppMonA === "object" ? r.oppMonA.slug : r.oppMonA);
+          const slugB = r.oppMonBSlug || (typeof r.oppMonB === "object" ? r.oppMonB.slug : r.oppMonB);
 
           return (
             <div
@@ -509,10 +533,16 @@ function validateAndSave() {
               </div>
               <div className="col-span-4 flex items-center gap-2">
                 {r.oppMonA ? (
-                  <DeckAvatar name={typeof r.oppMonA === "object" ? r.oppMonA.name : r.oppMonA} />
+                  <DeckAvatar
+                    name={typeof r.oppMonA === "object" ? r.oppMonA.name : r.oppMonA}
+                    src={iconMap[slugA] || undefined}
+                  />
                 ) : null}
                 {r.oppMonB ? (
-                  <DeckAvatar name={typeof r.oppMonB === "object" ? r.oppMonB.name : r.oppMonB} />
+                  <DeckAvatar
+                    name={typeof r.oppMonB === "object" ? r.oppMonB.name : r.oppMonB}
+                    src={iconMap[slugB] || undefined}
+                  />
                 ) : null}
                 <span className="opacity-90">
                   {r.opponentDeckName || r.normOppDeckKey || (forcedW ? (r.flags?.noShow ? "No show" : "Bye") : "—")}
