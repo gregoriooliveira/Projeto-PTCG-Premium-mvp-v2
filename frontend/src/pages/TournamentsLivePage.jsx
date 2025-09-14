@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { listLiveTournaments, suggestLiveTournaments, getLiveTournament } from "../services/api.js";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import DeckLabel from "../components/DeckLabel.jsx";
+import BackButton from "../components/BackButton.jsx";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -43,7 +44,7 @@ function deriveTournamentsFromLogs(logsJson, query=""){
     const key = tId || `name:${tName}`;
     const dateISO = String(r.date || r.createdAt || "").slice(0,10);
     const entry = map.get(key) || {
-      id: tId || "",               // pode ficar vazio (vamos usar key virtual no UI)
+      id: tId || "",
       tournamentId: tId || "",
       name: tName || "-",
       dateISO,
@@ -83,7 +84,6 @@ async function listLiveTournamentsLocal(query=""){
 
 // === NOVO: aceita id real OU id virtual "name:<nome>"
 async function getLiveTournamentLocal(idOrKey){
-  // Se for um id virtual baseado em nome
   if (typeof idOrKey === "string" && idOrKey.startsWith("name:")){
     const name = idOrKey.slice(5).toLowerCase();
     const logs = await tryJson(`${API}/api/live/logs?limit=2000`);
@@ -105,7 +105,6 @@ async function getLiveTournamentLocal(idOrKey){
     return { id: idOrKey, name: idOrKey.slice(5), dateISO, counts, rounds };
   }
 
-  // Fluxo com ID real de torneio
   try {
     const r = await getLiveTournament(idOrKey);
     if (r && (Array.isArray(r.rounds) || r.id)) return r;
@@ -113,7 +112,6 @@ async function getLiveTournamentLocal(idOrKey){
   const e1 = await tryJson(`${API}/api/live/tournaments/${idOrKey}`);
   if (e1 && (Array.isArray(e1.rounds) || e1.id)) return e1;
 
-  // Fallback por ID real dentro dos logs
   const logs = await tryJson(`${API}/api/live/logs?limit=2000`);
   const rows = safeArray(logs?.rows || logs).filter(r => (r.tournamentId || r.tId || r.tournament_id) == idOrKey);
   const rounds = rows.map((r,idx)=>({
@@ -210,7 +208,6 @@ export default function TournamentsLivePage() {
     return { ...a, wr: WR(a.w,a.l,a.t), pts: PTS(a.w,a.l,a.t) };
   }, [filtered]);
 
-  // Agora aceita id real ou virtual "name:<nome>"
   async function toggleOpen(idOrKey){
     if (openId === idOrKey){ setOpenId(null); return; }
     setOpenId(idOrKey);
@@ -227,10 +224,11 @@ export default function TournamentsLivePage() {
   return (
     <div className="min-h-screen w-full bg-zinc-950 text-zinc-100">
       <div className="mx-auto max-w-7xl px-4 py-6">
-        <header className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            <a href="#/tcg-live/torneios" className="hover:underline">Torneios — TCG Live</a>
-          </h1>
+        {/* Botão voltar padrão */}
+        <BackButton href="#/tcg-live" label="Voltar" />
+
+        <header className="mb-6 mt-2">
+          <h1 className="text-2xl font-semibold tracking-tight">Torneios — TCG Live</h1>
           <p className="mt-1 text-sm text-zinc-400">
             Importe logs para criar novos torneios. Informe o Limitless ID, ou marque que não possui para inserir manualmente o nome.
           </p>

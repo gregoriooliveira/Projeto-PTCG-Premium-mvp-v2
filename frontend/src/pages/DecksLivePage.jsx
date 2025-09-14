@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import DeckLabel from "../components/DeckLabel.jsx";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
+import BackButton from "../components/BackButton.jsx";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -71,10 +72,10 @@ function getTournamentIdFromLog(r) {
 /** Normaliza separadores “/” repetidos: "A / / B" -> "A / B", remove barras nas pontas e ajusta espaços. */
 function collapseSlashes(name) {
   return String(name ?? "")
-    .replace(/(?:\s*\/\s*){2,}/g, " / ")  // colapsa 2+ grupos de “/”
-    .replace(/\s*\/\s*/g, " / ")          // normaliza espaços ao redor de “/”
-    .replace(/^\s*\/\s*|\s*\/\s*$/g, "")  // tira barra no começo/fim
-    .replace(/\s{2,}/g, " ")              // remove espaços duplos
+    .replace(/(?:\s*\/\s*){2,}/g, " / ")
+    .replace(/\s*\/\s*/g, " / ")
+    .replace(/^\s*\/\s*|\s*\/\s*$/g, "")
+    .replace(/\s{2,}/g, " ")
     .trim();
 }
 
@@ -182,11 +183,10 @@ function DecksLivePage() {
   return (
     <div className="min-h-screen w-full bg-zinc-950 text-zinc-100">
       <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="mb-4">
-          <a href="#/tcg-live" className="text-sm text-zinc-400 hover:underline">Voltar ao TCG Live</a>
-        </div>
+        {/* Substitui o link antigo por BackButton padrão */}
+        <BackButton href="#/tcg-live" label="Voltar" />
 
-        <header className="mb-4 flex items-center justify-between gap-3">
+        <header className="mb-4 mt-2 flex items-center justify-between gap-3">
           <h1 className="text-3xl font-semibold tracking-tight">Decks (TCG Live)</h1>
           <label className="inline-flex items-center gap-2 text-sm">
             <span className="text-zinc-400">Filtrar:</span>
@@ -283,14 +283,12 @@ function DecksLivePage() {
 
                                   const logHref = log?.id ? `#/tcg-live/logs/${encodeURIComponent(log.id)}` : null;
 
-                                  // <<<<< CORREÇÃO: colapsa “/ /” antes de renderizar >>>>>
                                   const oppDeckDisplay = collapseSlashes(
                                     prettyDeckKey(log.opponentDeck || "-")
                                   );
 
                                   return (
                                     <tr key={log.id} className="border-b border-zinc-800 hover:bg-zinc-900/50">
-                                      {/* Data -> link para o log */}
                                       <td className="px-3 py-2">
                                         {logHref ? (
                                           <a href={logHref} className="block hover:underline">
@@ -303,7 +301,6 @@ function DecksLivePage() {
                                         )}
                                       </td>
 
-                                      {/* Oponente -> link para o log */}
                                       <td className="px-3 py-2">
                                         {logHref ? (
                                           <a href={logHref} className="block hover:underline">
@@ -314,7 +311,6 @@ function DecksLivePage() {
                                         )}
                                       </td>
 
-                                      {/* Deck do Oponente -> link para o log (com normalização) */}
                                       <td className="px-3 py-2">
                                         {logHref ? (
                                           <a href={logHref} className="block hover:underline">
@@ -325,7 +321,6 @@ function DecksLivePage() {
                                         )}
                                       </td>
 
-                                      {/* Resultado -> link para o log */}
                                       <td className="px-3 py-2 text-center">
                                         {logHref ? (
                                           <a href={logHref} className="inline-block hover:underline">
@@ -358,7 +353,6 @@ function DecksLivePage() {
                                         )}
                                       </td>
 
-                                      {/* Evento -> mantém link para torneio (quando houver) */}
                                       <td className="px-3 py-2">
                                         {tName ? (
                                           tId ? (

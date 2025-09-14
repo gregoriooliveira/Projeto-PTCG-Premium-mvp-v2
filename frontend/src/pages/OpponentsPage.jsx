@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getOpponentsAgg, getOpponentLogs } from "../services/api.js";
 import DeckLabel from "../components/DeckLabel.jsx";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
+import BackButton from "../components/BackButton.jsx";
 
 /* ---------- helpers ---------- */
 function toDeckKey(s = "") {
@@ -155,7 +156,10 @@ export default function OpponentsPage() {
 
   return (
     <div className="min-h-[80vh] w-full bg-zinc-950 text-zinc-100 p-4 md:p-6">
-      <div>
+      {/* Botão voltar padrão */}
+      <BackButton href="#/tcg-live" label="Voltar" />
+
+      <div className="mt-2">
         <h1 className="text-2xl md:text-3xl font-semibold">Oponentes</h1>
       </div>
 
@@ -198,19 +202,13 @@ export default function OpponentsPage() {
 
       <div className="divide-y divide-zinc-900/60">
         {rows.map((r) => {
-          // prioriza key; se vier só nome, normaliza pra key (evita "/ /")
           const headerDeckKey = r.topDeckKey || toDeckKey(r.topDeckName || "");
           return (
             <div key={r.name} className="py-3">
               <div className="grid grid-cols-12 items-center gap-2">
                 <div className="col-span-3 text-sm">
-                  <a
-                    href={`#/oponentes?op=${encodeURIComponent(r.name)}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="text-zinc-200 hover:text-white underline"
-                  >
-                    {r.name}
-                  </a>
+                  {/* Nome como texto simples em negrito (sem link/underline) */}
+                  <span className="font-semibold text-zinc-100">{r.name}</span>
                 </div>
                 <div className="col-span-2 flex justify-center"><Pill>{r.wr}%</Pill></div>
                 <div className="col-span-2 flex justify-center"><WLTriplet {...r.counts} /></div>

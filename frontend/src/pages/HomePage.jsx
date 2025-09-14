@@ -66,6 +66,13 @@ const Last5DaysWidget = ({ home }) => {
   const days = Array.isArray(home?.lastDays) ? home.lastDays : [];
   return (
     <WidgetCard title="Últimos 5 dias (Todos)" icon={CalendarDays} className="col-span-12 md:col-span-6">
+      {/* Cabeçalho inserido */}
+      <div className="grid grid-cols-12 font-mono text-xs text-zinc-400 mb-2">
+        <div className="col-span-4">Data</div>
+        <div className="col-span-4 text-center">Resultado</div>
+        <div className="col-span-4 text-right">WinRate</div>
+      </div>
+
       <div className="space-y-2">
         {days.length === 0 && <div className="text-sm text-zinc-400">Sem partidas ainda.</div>}
         {days.map((d) => (
@@ -84,6 +91,13 @@ const TopDecksWidget = ({ home }) => {
   const rows = Array.isArray(home?.topDecks) ? home.topDecks : [];
   return (
     <WidgetCard title="Top 5 Decks por Win Rate" icon={Trophy} iconClass="text-yellow-400" className="col-span-12 md:col-span-6">
+      {/* Cabeçalho inserido */}
+      <div className="grid grid-cols-12 font-mono text-xs text-zinc-400 mb-2">
+        <div className="col-span-6">Deck</div>
+        <div className="col-span-3 text-center">Resultado</div>
+        <div className="col-span-3 text-right">WinRate</div>
+      </div>
+
       <div className="space-y-2">
         {rows.map((r, i) => (
           <div key={`${r.deckKey}-${i}`} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
@@ -100,9 +114,6 @@ const TopDecksWidget = ({ home }) => {
 };
 
 /* ===================== FALLBACK DO TOP DECK POR OPONENTE ===================== */
-/** Se o agregado não trouxer o deck, buscamos 1 log do oponente e usamos o opponentDeck desse log.
- *  O nome é normalizado para deckKey e depois formatado por prettyDeckKey.
- */
 async function enrichOpponentsWithTopDeck(home) {
   const list = Array.isArray(home?.topOpponents) ? [...home.topOpponents] : [];
   const enriched = await Promise.all(
@@ -119,15 +130,15 @@ async function enrichOpponentsWithTopDeck(home) {
         if (!name) return r;
 
         let res = null;
-        try { res = await getOpponentLogs(name, 1, 0); }            // assinatura antiga
-        catch { res = await getOpponentLogs(name, { limit:1, offset:0 }); } // assinatura nova
+        try { res = await getOpponentLogs(name, 1, 0); }
+        catch { res = await getOpponentLogs(name, { limit:1, offset:0 }); }
 
         const rows = Array.isArray(res?.rows) ? res.rows : (Array.isArray(res) ? res : []);
         const first = rows[0];
         const deckStr = first?.opponentDeck || first?.oppDeck || "";
         const dk = normalizeDeckKey(deckStr || "");
         if (dk) return { ...r, topDeck: { deckKey: dk } };
-      } catch { /* silencioso */ }
+      } catch {}
 
       return r;
     })
@@ -159,15 +170,12 @@ const TopOpponentsWidget = ({ home }) => {
         const counts = r?.counts || { W: 0, L: 0, T: 0 };
         const wr = typeof r?.wr === "number" ? r.wr : 0;
 
-        // prioriza key; se vier só nome, normaliza; se nada, mostra "—"
         const keyFromData =
           r?.topDeck?.deckKey ||
           r?.topDeckKey ||
           normalizeDeckKey(r?.topDeckName || r?.topDeck || "");
 
-        // rótulo formatado
         const rawLabel = keyFromData ? prettyDeckKey(keyFromData) : "—";
-        // 👇 sanitizer: colapsa “/ /” para “ / ”
         const deckLabel = rawLabel.replace(/\s*\/+\s*\/+\s*/g, " / ");
 
         const hints = Array.isArray(r?.topPokemons)
