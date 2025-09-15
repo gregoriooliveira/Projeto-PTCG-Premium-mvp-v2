@@ -156,6 +156,24 @@ async function recomputeRoundsAgg(eventId) {
   }, { merge: true });
 }
 
+r.get("/events/:eventId/rounds", async (req, res) => {
+  try {
+    const eventId = String(req.params.eventId || "");
+    if (!eventId) return res.status(400).json({ error: "invalid_event" });
+    const snap = await db
+      .collection("physicalEvents")
+      .doc(eventId)
+      .collection("rounds")
+      .orderBy("number")
+      .get();
+    const rounds = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return res.json(rounds);
+  } catch (e) {
+    console.error("[GET /physical/events/:eventId/rounds]", e);
+    return res.status(500).json({ error: "rounds_list_failed" });
+  }
+});
+
 r.post("/events/:eventId/rounds", authMiddleware, async (req, res) => {
   try {
     const eventId = String(req.params.eventId || "");

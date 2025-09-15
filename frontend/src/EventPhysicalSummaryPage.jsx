@@ -5,7 +5,7 @@ import PokemonAutocomplete from "./components/PokemonAutocomplete";
 import DeckLabel from "./components/DeckLabel.jsx";
 import DeckModal from "./components/DeckModal.jsx";
 import { getEvent } from "./eventsRepo.js";
-import { postPhysicalRound } from "./services/physicalApi.js";
+import { postPhysicalRound, getPhysicalRounds } from "./services/physicalApi.js";
 import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
 // helper: get store slug from hash query
@@ -244,6 +244,10 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
   }, [eventId]);
 
   const [rounds, setRounds] = useState([]);
+  useEffect(() => {
+    if (!eventId) return;
+    getPhysicalRounds(eventId).then((rs) => setRounds(rs || []));
+  }, [eventId]);
   const [editRoundIndex, setEditRoundIndex] = useState(null);
   const [editingDeck, setEditingDeck] = useState(false);
 
