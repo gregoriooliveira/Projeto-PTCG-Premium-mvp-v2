@@ -415,33 +415,36 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       g3: canShowGame3() ? { ...form.g3 } : { result: "", order: "" },
       flags: { noShow: form.noShow, bye: form.bye, id: form.id },
     };
+    let saved;
     try {
-      const saved = await postPhysicalRound(eventData.id, round);
-      const finalRound = {
-        ...round,
-        ...(saved || {}),
-        id: saved?.roundId || saved?.id || round.id,
-        number: saved?.number || round.number,
-      };
-      if (editRoundIndex !== null) {
-        setRounds((rs) =>
-          rs.map((it, i) =>
-            i === editRoundIndex
-              ? { ...finalRound, id: finalRound.id || it.id, number: finalRound.number || it.number }
-              : it
-          )
-        );
-        setEditRoundIndex(null);
-      } else {
-        setRounds((rs) => [...rs, finalRound]);
-        if (rounds.length === 0) setShowForm(false);
-      }
-      resetForm();
-    } catch (e) {
-      console.warn("Falha ao salvar round", e);
-      const msg = e?.message || "Falha ao salvar round";
-      showToast(msg, "error");
+      saved = await postPhysicalRound(eventData.id, round);
+    } catch (err) {
+      console.error("Falha ao salvar round", err);
+      showToast("Não foi possível salvar o round. Tente novamente.", "error");
+      return; // exit without altering state
     }
+
+    const finalRound = {
+      ...round,
+      ...(saved || {}),
+      id: saved?.roundId || saved?.id || round.id,
+      number: saved?.number || round.number,
+    };
+
+    if (editRoundIndex !== null) {
+      setRounds((rs) =>
+        rs.map((it, i) =>
+          i === editRoundIndex
+            ? { ...finalRound, id: finalRound.id || it.id, number: finalRound.number || it.number }
+            : it
+        )
+      );
+      setEditRoundIndex(null);
+    } else {
+      setRounds((rs) => [...rs, finalRound]);
+      if (rounds.length === 0) setShowForm(false);
+    }
+    resetForm();
   }
 
   function rowToneFor(res) {
