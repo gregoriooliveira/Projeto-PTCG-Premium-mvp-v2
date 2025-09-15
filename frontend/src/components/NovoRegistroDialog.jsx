@@ -159,12 +159,14 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
       if (typeof onCreated === "function")
         onCreated({ ...payload, eventId });
 
-      if (eventId)
+      if (eventId) {
         history.pushState(
           { eventFromProps: { ...payload, id: eventId } },
           "",
           "#/tcg-fisico/eventos/" + eventId,
         );
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      }
 
       setOpen(false);
     } catch (err) {
