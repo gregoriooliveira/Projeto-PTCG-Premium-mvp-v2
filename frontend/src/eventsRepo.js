@@ -53,7 +53,7 @@ export async function createEvent(ev) {
 
 export async function updateEvent(id, patch) {
   try {
-    return await api(`${API_BASE}/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(patch) });
+    return await api(`${API_BASE}/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(patch) });
   } catch (err) {
     console.warn('Falha ao atualizar evento', err);
     return null;

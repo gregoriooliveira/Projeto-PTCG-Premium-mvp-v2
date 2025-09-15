@@ -875,12 +875,18 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
                 throw new Error("Deck update returned empty response");
               }
               const mapped = mapIncomingEvent(updated, eventData.id);
-              const nextDeck =
-                mapped?.deck || {
-                  deckName: deck.deckName,
-                  pokemon1: deck.pokemon1,
-                  pokemon2: deck.pokemon2,
-                };
+              const serverDeck = mapped?.deck;
+              const hasServerDeck = !!(
+                serverDeck &&
+                (serverDeck.deckName || serverDeck.pokemon1 || serverDeck.pokemon2)
+              );
+              const nextDeck = hasServerDeck
+                ? serverDeck
+                : {
+                    deckName: deck.deckName,
+                    pokemon1: deck.pokemon1,
+                    pokemon2: deck.pokemon2,
+                  };
               setEventData((prev) => ({ ...prev, deck: nextDeck }));
               setEditingDeck(false);
               showToast("Deck atualizado com sucesso!", "success");
