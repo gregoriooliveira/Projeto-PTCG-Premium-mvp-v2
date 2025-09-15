@@ -60,6 +60,15 @@ export async function updateEvent(id, patch) {
   }
 }
 
+export async function deleteEvent(id) {
+  try {
+    return await api(`/api/physical/events/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  } catch (err) {
+    console.warn('Falha ao excluir evento', err);
+    throw err;
+  }
+}
+
 export function getMatchesCount(ev) {
   if (Array.isArray(ev?.rounds)) return ev.rounds.length;
   if (ev?.stats?.totalMatches != null) return Number(ev.stats.totalMatches) || 0;

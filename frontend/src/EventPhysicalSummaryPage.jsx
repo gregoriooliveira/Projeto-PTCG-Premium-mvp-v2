@@ -4,7 +4,7 @@ import BackButton from "./components/BackButton";
 import PokemonAutocomplete from "./components/PokemonAutocomplete";
 import DeckLabel from "./components/DeckLabel.jsx";
 import DeckModal from "./components/DeckModal.jsx";
-import { getEvent, updateEvent } from "./eventsRepo.js";
+import { getEvent, updateEvent, deleteEvent } from "./eventsRepo.js";
 import { postPhysicalRound, getPhysicalRounds } from "./services/physicalApi.js";
 import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
@@ -193,6 +193,7 @@ function computeTournamentWinRate(V, D, E) {
 export default function EventPhysicalSummaryPage({ eventFromProps }) {
   const [toast, setToast] = useState({ message: "", type: "info" });
   const showToast = (message, type = "info") => setToast({ message, type });
+  const [isDeleting, setIsDeleting] = useState(false);
   // --- Voltar ao dia (quando vier do resumo do dia) ---
   const __qsHash = React.useMemo(() => {
     try {
@@ -531,23 +532,53 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
           </div>
         </div>
 
-<div className="relative">        <div className="flex items-center gap-2 mr-3"></div>
+        <div className="relative">
+          <div className="flex items-center gap-2 mr-3"></div>
           {/* Edit / Delete */}
-          <div className="absolute -top-3 -left-20 flex items-center gap-1"><button
-            type="button"
-            className="px-1 py-0.5 text-[10px] rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-800"
-            title="Editar evento"
-            onClick={() => { setEventDraft({ ...eventData }); setEditingEvent(true); }}
-          >✎</button><button
-            type="button"
-            className="px-1 py-0.5 text-[10px] rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-800"
-            title="Excluir evento"
-            onClick={() => {
-              if (confirm("Excluir este evento?")) {
-                window.location.hash = "#/tcg-fisico";
-              }
-            }}
-          >🗑</button></div>
+          <div className="absolute -top-3 -left-20 flex items-center gap-1">
+            <button
+              type="button"
+              className="px-1 py-0.5 text-[10px] rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-800"
+              title="Editar evento"
+              onClick={() => {
+                setEventDraft({ ...eventData });
+                setEditingEvent(true);
+              }}
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              className="px-1 py-0.5 text-[10px] rounded-md border border-zinc-700 text-zinc-200 hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Excluir evento"
+              disabled={isDeleting}
+              onClick={async () => {
+                if (isDeleting) return;
+                if (!confirm("Excluir este evento?")) return;
+                if (!eventData?.id) {
+                  showToast("ID do evento não encontrado", "error");
+                  return;
+                }
+                let shouldRedirect = false;
+                try {
+                  setIsDeleting(true);
+                  await deleteEvent(eventData.id);
+                  showToast("Evento excluído com sucesso!", "success");
+                  shouldRedirect = true;
+                } catch (err) {
+                  console.warn("Falha ao excluir evento", err);
+                  showToast("Não foi possível excluir o evento. Tente novamente.", "error");
+                } finally {
+                  setIsDeleting(false);
+                  if (shouldRedirect) {
+                    window.location.hash = "#/tcg-fisico";
+                  }
+                }
+              }}
+            >
+              🗑
+            </button>
+          </div>
 
           {/* placar do torneio + avatar */}
           <div className="flex items-center gap-3">
