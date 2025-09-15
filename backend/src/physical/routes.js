@@ -25,7 +25,22 @@ r.post("/events", authMiddleware, async (req, res) => {
   const opponentDeckKey = normalizeDeckKey(opponentDeck);
 
   const createdAt = body.createdAt || now;
-  const date = body.dia ? String(body.dia) : dateKeyFromTs(createdAt);
+  let date;
+  if (body.dia) {
+    const diaStr = String(body.dia);
+    const br = /^([0-9]{2})\/([0-9]{2})\/([0-9]{4})$/.exec(diaStr);
+    if (br) {
+      const [, d, m, y] = br;
+      date = `${y}-${m}-${d}`;
+    } else if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(diaStr)) {
+      date = diaStr;
+    } else {
+      const ts = Date.parse(diaStr);
+      date = Number.isNaN(ts) ? dateKeyFromTs(createdAt) : dateKeyFromTs(ts);
+    }
+  } else {
+    date = dateKeyFromTs(createdAt);
+  }
   const name = body.nome ? String(body.nome) : null;
   const type = body.tipo ? String(body.tipo) : null;
   const storeOrCity = body.local ? String(body.local) : null;
