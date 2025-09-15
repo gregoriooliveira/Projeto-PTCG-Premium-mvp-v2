@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getAllEvents, getMatchesCount, updateEvent } from "./eventsRepo.js";
+import Toast from "./components/Toast.jsx";
 
 const norm = s => String(s || "").trim();
 const normalizeCity = (s) => norm(s)
@@ -47,6 +48,8 @@ function eventDateYMD(ev){ return ev?.dia || ev?.date || ''; }
 export default function TournamentEventsPage() {
   const [all, setAll] = useState([]);
   const hash = useHash();
+  const [toast, setToast] = useState({ message: "", type: "info" });
+  const showToast = (message, type = "info") => setToast({ message, type });
 
   // Load all events
   useEffect(() => { getAllEvents().then(setAll); }, []);
@@ -70,19 +73,25 @@ export default function TournamentEventsPage() {
 
   const goBack = () => (window.location.hash = "#/tcg-fisico");
 
-  const openEvent = (ev) => {
-    const id = ev?.id;
-    if (!id) return;
-    const state = { eventFromProps: ev };
+  const openEvent = (eventData) => {
+    const id = eventData?.id;
+    if (!id) {
+      showToast("ID do evento não encontrado", "error");
+      return;
+    }
+    const encodedId = encodeURIComponent(id);
+    const path = `#/tcg-fisico/eventos/${encodedId}${selectedTypes.length ? ('?from=torneios&type=' + encodeURIComponent(selectedTypes.join(','))) : '?from=torneios'}`;
+    const state = { eventFromProps: eventData };
     try {
-      history.pushState(state, "", `#/tcg-fisico/eventos/${encodeURIComponent(id)}${selectedTypes.length ? ('?from=torneios&type=' + encodeURIComponent(selectedTypes.join(','))) : '?from=torneios'}`);
+      history.pushState(state, "", path);
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     } catch {
-      window.location.hash = `#/tcg-fisico/eventos/${encodeURIComponent(id)}${selectedTypes.length ? ('?from=torneios&type=' + encodeURIComponent(selectedTypes.join(','))) : '?from=torneios'}`;
+      window.location.hash = path;
     }
   };
 
   return (
+    <>
     <div className="p-4 md:p-6 text-zinc-200">
       <div className="flex items-center gap-2 mb-4">
         <button onClick={goBack} className="text-sm text-zinc-400 hover:text-zinc-200" aria-label="Voltar ao TCG Físico" title="Voltar ao TCG Físico">← Voltar</button>
@@ -176,5 +185,9 @@ export default function TournamentEventsPage() {
         </div>
       </div>
     </div>
+    {toast.message && (
+      <Toast {...toast} onClose={() => setToast({ message: "", type: "info" })} />
+    )}
+    </>
   );
 }
