@@ -6,6 +6,9 @@ export const postPhysicalEvent = (payload) =>
 export const getPhysicalEvent = (id) =>
   api(`/api/physical/events/${encodeURIComponent(id)}`);
 
+export const getPhysicalRounds = (eventId) =>
+  api(`/api/physical/events/${encodeURIComponent(eventId)}/rounds`);
+
 // POST /api/physical/events/:eventId/rounds
 // Returns the saved round object from the backend
 export const postPhysicalRound = async (eventId, payload) => {
