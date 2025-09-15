@@ -29,21 +29,21 @@ const getStoreFromHash = () => {
 
 
 // Helper: extract event id from location.hash (supports .../eventos/:id)
-function extractEventIdFromHash(){
-  try{
+function extractEventIdFromHash() {
+  try {
     const h = window.location.hash || "";
-    const m = h.match(/^#\/(?:[^/]+\/)*eventos\/([^/]+)$/);
+    const m = h.match(/^#\/(?:[^/]+\/)*eventos\/([^/?]+)(?:\?.*)?$/);
     return m && m[1] ? decodeURIComponent(m[1]) : null;
-  }catch{
+  } catch {
     return null;
   }
 }
 
 // Map legacy/new payload from storage to the shape used on the page
-function mapIncomingEvent(ev){
+function mapIncomingEvent(ev, hashId) {
   if (!ev) return null;
   const mapped = {
-    id: ev.id || ev.eventId || extractEventIdFromHash() || "evt-demo-001",
+    id: ev.id || ev.eventId || hashId || "evt-demo-001",
     name: ev.name || ev.nome || "—",
     storeOrCity: ev.storeOrCity || ev.storeName || ev.local || "—",
     date: ev.date || ev.dia || "—",
@@ -227,21 +227,21 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
 
   // IMPORTANTE: manter dados no estado para edição sem mutar const
   const [eventData, setEventData] = useState(defaultEvent);
+  const eventId = React.useMemo(() => extractEventIdFromHash(), []);
   useEffect(() => {
     try {
       const fromHist = window.history?.state?.eventFromProps;
       if (fromHist) {
-        setEventData({ ...defaultEvent, ...mapIncomingEvent(fromHist) });
+        setEventData({ ...defaultEvent, ...mapIncomingEvent(fromHist, eventId) });
         return;
       }
     } catch {}
-    const id = extractEventIdFromHash();
-    if (id) {
-      getEvent(id).then((ev) => {
-        if (ev) setEventData({ ...defaultEvent, ...mapIncomingEvent(ev) });
+    if (eventId) {
+      getEvent(eventId).then((ev) => {
+        if (ev) setEventData({ ...defaultEvent, ...mapIncomingEvent(ev, eventId) });
       });
     }
-  }, []);
+  }, [eventId]);
 
   const [rounds, setRounds] = useState([]);
   const [editRoundIndex, setEditRoundIndex] = useState(null);
