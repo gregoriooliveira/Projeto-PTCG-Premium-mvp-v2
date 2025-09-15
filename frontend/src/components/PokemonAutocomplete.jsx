@@ -15,6 +15,7 @@ export default function PokemonAutocomplete({ label, required=false, value, onCh
     let abort=false;
     const run = async () => {
       const s = q.trim();
+      if (value?.name && value.name === s){ setItems([]); setOpen(false); return; }
       if (s.length < min){ setItems([]); setOpen(false); return; }
       try{
         const res = await searchPokemon(s);
@@ -23,7 +24,7 @@ export default function PokemonAutocomplete({ label, required=false, value, onCh
     };
     run();
     return () => { abort = true; };
-  }, [q]);
+  }, [q, value?.name]);
 
   const handleBlur = () => {
     // espera clique no item (onMouseDown) antes de fechar
