@@ -152,7 +152,10 @@ function normalizePokemonPair(p1, p2) {
   return `${x}/${y}`;
 }
 
-function computeMatchResult(games) {
+function computeMatchResult(round) {
+  const flags = round?.flags || round;
+  if (flags?.bye || flags?.noShow) return "V";
+  const games = [round.g1, round.g2, round.g3];
   let v = 0, d = 0, e = 0;
   for (const g of games) {
     if (g.result === "V") v += 1;
@@ -276,7 +279,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
   const stats = useMemo(() => {
     let V = 0, D = 0, E = 0, points = 0;
     for (const r of rounds) {
-      const res = computeMatchResult([r.g1, r.g2, r.g3]);
+      const res = computeMatchResult(r);
       if (res === "V") V += 1; else if (res === "D") D += 1; else E += 1;
       points += pointsForMatch(res);
     }
@@ -347,8 +350,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       const pts = pointsForMatch(res);
       return { res, pts };
     }
-    const games = [form.g1, form.g2, form.g3];
-    const res = computeMatchResult(games);
+    const res = computeMatchResult(form);
     const pts = pointsForMatch(res);
     return { res, pts };
   }
@@ -564,7 +566,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
         )}
 
         {rounds.map((r, idx) => {
-          const res = computeMatchResult([r.g1, r.g2, r.g3]);
+          const res = computeMatchResult(r);
           const forcedW = r.flags?.noShow || r.flags?.bye;
           const resStr = forcedW
             ? "W"
@@ -773,7 +775,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       noShow: !f.noShow,
       bye: false,
       id: false,
-      g1: { result: "W", order: f.g1?.order || "1st" },
+      g1: { result: "V", order: f.g1?.order || "1st" },
       g2: { result: "", order: "" },
       g3: { result: "", order: "" },
     }))}
@@ -787,7 +789,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       bye: !f.bye,
       noShow: false,
       id: false,
-      g1: { result: "W", order: f.g1?.order || "1st" },
+      g1: { result: "V", order: f.g1?.order || "1st" },
       g2: { result: "", order: "" },
       g3: { result: "", order: "" },
     }))}
