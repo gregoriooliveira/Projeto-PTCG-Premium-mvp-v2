@@ -111,6 +111,12 @@ POST /api/physical/events
 Content-Type: application/json
 
 {
+  "dia": "2024-05-01",
+  "nome": "League Challenge",
+  "tipo": "LC",
+  "local": "Loja XPTO",
+  "formato": "Standard",
+  "classificacao": "League Challenge",
   "you": "Ash",
   "opponent": "Gary",
   "deckName": "Chien-Pao/Baxcalibur",
@@ -122,6 +128,27 @@ Content-Type: application/json
 ```
 
 Resposta: `201 { "eventId": "abc123" }`.
+
+`GET /api/physical/events/:id` retorna:
+
+```json
+{
+  "eventId": "abc123",
+  "date": "2024-05-01",
+  "name": "League Challenge",
+  "type": "LC",
+  "storeOrCity": "Loja XPTO",
+  "format": "Standard",
+  "classification": "League Challenge",
+  "you": "Ash",
+  "opponent": "Gary",
+  "deckName": "Chien-Pao/Baxcalibur",
+  "opponentDeck": "Miraidon",
+  "result": "W",
+  "round": 1,
+  "pokemons": ["chien-pao-ex", "baxcalibur"]
+}
+```
 
 ### Pokédex e persistência de Pokémon
 

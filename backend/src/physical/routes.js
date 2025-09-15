@@ -25,7 +25,12 @@ r.post("/events", authMiddleware, async (req, res) => {
   const opponentDeckKey = normalizeDeckKey(opponentDeck);
 
   const createdAt = body.createdAt || now;
-  const date = dateKeyFromTs(createdAt);
+  const date = body.dia ? String(body.dia) : dateKeyFromTs(createdAt);
+  const name = body.nome ? String(body.nome) : null;
+  const type = body.tipo ? String(body.tipo) : null;
+  const storeOrCity = body.local ? String(body.local) : null;
+  const format = body.formato ? String(body.formato) : null;
+  const classification = body.classificacao ? String(body.classificacao) : null;
   const isOnlineTourney = !!body.isOnlineTourney;
   const limitlessId = body.limitlessId || null;
   const tourneyName = body.tourneyName || null;
@@ -42,7 +47,8 @@ r.post("/events", authMiddleware, async (req, res) => {
     you, opponent, deckName, opponentDeck,
     playerDeckKey, opponentDeckKey,
     isOnlineTourney, limitlessId, tourneyName, tournamentId,
-    result, round, placement, rawLog, lang, pokemons
+    result, round, placement, rawLog, lang, pokemons,
+    name, type, storeOrCity, format, classification
   };
   await db.collection("physicalEvents").doc(eventId).set(doc, { merge: true });
   await recomputeAllForEvent(doc);
