@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getAllEvents, getMatchesCount } from "./eventsRepo.js";
+import Toast from "./components/Toast.jsx";
 
 const norm = s => String(s || "").trim();
 const normalizeStore = (s) => norm(s)
@@ -64,6 +65,8 @@ export default function StoreEventsPage() {
   const [storeParam, setStoreParam] = useState(""); // valor atual da seleção
   const [typeFilter, setTypeFilter] = useState("Todos");
   const [sortMode, setSortMode] = useState("createdAt"); // "createdAt" | "name"
+  const [toast, setToast] = useState({ message: "", type: "info" });
+  const showToast = (message, type = "info") => setToast({ message, type });
 
   useEffect(() => {
     try {
@@ -135,18 +138,22 @@ const raw = norm(getStoreFromEvent(ev));
 
   const goBack = () => (window.location.hash = "#/tcg-fisico");
 
-  const openEvent = (ev) => {
-    const id = ev?.id;
-    if (!id) return;
+  const openEvent = (eventData) => {
+    const id = eventData?.id;
+    if (!id) {
+      showToast("ID do evento não encontrado", "error");
+      return;
+    }
     const qs = new URLSearchParams();
     try { if (storeParam) qs.set('store', storeParam); } catch {}
-    const d = ev?.dia || ev?.date;
+    const d = eventData?.dia || eventData?.date;
     if (d) qs.set('date', d);
     const q = qs.toString();
     window.location.hash = `#/tcg-fisico/eventos/${encodeURIComponent(id)}${q ? `?${q}` : ''}`;
   };
 
   return (
+    <>
     <div className="min-h-screen bg-zinc-900 text-zinc-100">
       <div className="max-w-5xl mx-auto px-4 py-6">
         {/* Cabeçalho */}
@@ -264,5 +271,9 @@ const raw = norm(getStoreFromEvent(ev));
         )}
       </div>
     </div>
+    {toast.message && (
+      <Toast {...toast} onClose={() => setToast({ message: "", type: "info" })} />
+    )}
+    </>
   );
 }

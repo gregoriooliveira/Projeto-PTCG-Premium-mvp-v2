@@ -8,6 +8,7 @@ import React, {
 import PropTypes from "prop-types";
 import { useNavigate } from "react-router-dom";
 import { createEvent } from "../eventsRepo.js";
+import Toast from "./Toast.jsx";
 
 /**
  * NovoRegistroDialog (robusto, inputs não-controlados p/ digitação fluida)
@@ -28,6 +29,8 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     if (typeof onOpenChange === "function") onOpenChange(v);
     if (!v) setServerError("");
   };
+  const [toast, setToast] = useState({ message: "", type: "info" });
+  const showToast = (message, type = "info") => setToast({ message, type });
 
   useImperativeHandle(ref, () => ({
     open: () => setOpen(true),
@@ -163,7 +166,10 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
         onCreated({ ...payload, eventId });
 
         if (eventId) {
-          navigate("/tcg-fisico/eventos/" + eventId);
+          navigate(`/tcg-fisico/eventos/${encodeURIComponent(eventId)}`);
+        } else {
+          showToast("ID do evento não encontrado", "error");
+          return;
         }
 
       setOpen(false);
@@ -345,6 +351,9 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
             </form>
           </div>
         </div>
+      )}
+      {toast.message && (
+        <Toast {...toast} onClose={() => setToast({ message: "", type: "info" })} />
       )}
     </>
   );
