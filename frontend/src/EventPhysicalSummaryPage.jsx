@@ -377,8 +377,12 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     });
     setEditRoundIndex(idx);
     try{ document.getElementById("round-form")?.scrollIntoView({behavior:"smooth"}); }catch{}
-  }
+  } 
   async function validateAndSave() {
+    if (!eventData?.id) {
+      showToast("ID do evento não encontrado", "error");
+      return;
+    }
   // Regra: Se ID selecionado, oponente é obrigatório; deck não é obrigatório
   if (form.id) {
     if (!form.opponentName || !form.opponentName.trim()) {
@@ -411,12 +415,6 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       g3: canShowGame3() ? { ...form.g3 } : { result: "", order: "" },
       flags: { noShow: form.noShow, bye: form.bye, id: form.id },
     };
-
-    if (!eventData.id) {
-      showToast("ID do evento não encontrado. Não foi possível salvar o round.", "error");
-      return;
-    }
-
     try {
       const saved = await postPhysicalRound(eventData.id, round);
       const finalRound = {
