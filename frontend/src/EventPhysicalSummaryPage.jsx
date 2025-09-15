@@ -375,7 +375,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
   async function validateAndSave() {
   // Regra: Se ID selecionado, oponente é obrigatório; deck não é obrigatório
   if (form.id) {
-    if (!form.opponent || !form.opponent.trim()) {
+    if (!form.opponentName || !form.opponentName.trim()) {
       alert("Oponente é obrigatório quando ID está selecionado.");
       return;
     }
@@ -405,6 +405,11 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       g3: canShowGame3() ? { ...form.g3 } : { result: "", order: "" },
       flags: { noShow: form.noShow, bye: form.bye, id: form.id },
     };
+
+    if (!eventData.id) {
+      showToast("ID do evento não encontrado. Não foi possível salvar o round.", "error");
+      return;
+    }
 
     try {
       const saved = await postPhysicalRound(eventData.id, round);
