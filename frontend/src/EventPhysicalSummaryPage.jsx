@@ -954,9 +954,45 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
               </button>
               <button
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
-                onClick={() => {
-                  setEventData((prev) => ({ ...prev, ...eventDraft }));
-                  setEditingEvent(false);
+                onClick={async () => {
+                  if (!eventData?.id) {
+                    showToast("ID do evento não encontrado", "error");
+                    return;
+                  }
+                  if (!eventDraft) {
+                    showToast("Dados do evento não encontrados", "error");
+                    return;
+                  }
+                  const patch = {
+                    name: eventDraft.name ?? eventData.name ?? "",
+                    storeOrCity:
+                      (eventDraft.storeOrCity ?? eventDraft.storeName) ??
+                      eventData.storeOrCity ??
+                      eventData.storeName ??
+                      "",
+                    date: eventDraft.date ?? eventData.date ?? "",
+                    type: eventDraft.type ?? eventData.type ?? "",
+                    format: eventDraft.format ?? eventData.format ?? "",
+                    classification:
+                      eventDraft.classification ?? eventData.classification ?? "",
+                  };
+                  try {
+                    await updateEvent(eventData.id, patch);
+                    const refreshed = await getEvent(eventData.id);
+                    if (!refreshed) {
+                      throw new Error("Resposta vazia ao buscar evento atualizado");
+                    }
+                    const mapped = mapIncomingEvent(refreshed, eventData.id);
+                    setEventData((prev) => ({ ...prev, ...mapped }));
+                    setEditingEvent(false);
+                    showToast("Evento atualizado com sucesso!", "success");
+                  } catch (err) {
+                    console.error("Falha ao atualizar evento", err);
+                    showToast(
+                      "Não foi possível atualizar o evento. Tente novamente.",
+                      "error"
+                    );
+                  }
                 }}
               >
                 Salvar
