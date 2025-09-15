@@ -11,6 +11,35 @@ const r = Router();
 
 function safeDocId(s){ try { return encodeURIComponent(String(s||"")); } catch { return String(s||"").replace(/[\/\.\#$\[\]]/g, "_"); } }
 
+function normalizeNullableString(value) {
+  if (value == null) return null;
+  const normalized = normalizeName(value);
+  return normalized ? normalized : null;
+}
+
+function normalizePatchDate(value) {
+  if (value == null) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return dateKeyFromTs(value.getTime());
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return dateKeyFromTs(value);
+  }
+  const str = String(value).trim();
+  if (!str) return null;
+  if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(str)) return str;
+  const br = /^([0-9]{2})\/([0-9]{2})\/([0-9]{4})$/.exec(str);
+  if (br) {
+    const [, d, m, y] = br;
+    return `${y}-${m}-${d}`;
+  }
+  const ts = Date.parse(str);
+  if (!Number.isNaN(ts)) {
+    return dateKeyFromTs(ts);
+  }
+  return undefined;
+}
+
 /** Create an event (log) */
 r.post("/events", authMiddleware, async (req, res) => {
   const body = req.body || {};
@@ -95,8 +124,10 @@ r.get("/events/:id", async (req, res) => {
  */
 r.patch("/events/:id", authMiddleware, async (req, res) => {
   const id = req.params.id;
-  const ds = await db.collection("physicalEvents").doc(id).get();
+  const docRef = db.collection("physicalEvents").doc(id);
+  const ds = await docRef.get();
   if (!ds.exists) return res.status(404).json({ error:"not_found" });
+  const current = ds.data() || {};
 
   const update = {};
   if ("deckName" in req.body) { update.deckName = normalizeName(req.body.deckName); update.playerDeckKey = normalizeDeckKey(update.deckName); }
@@ -107,12 +138,22 @@ r.patch("/events/:id", authMiddleware, async (req, res) => {
   if ("placement" in req.body) update.placement = req.body.placement;
   if ("pokemons" in req.body) update.pokemons = Array.isArray(req.body.pokemons) ? req.body.pokemons.slice(0,2) : [];
   if ("result" in req.body) update.result = req.body.result;
+  if ("name" in req.body) update.name = normalizeNullableString(req.body.name);
+  if ("storeOrCity" in req.body) update.storeOrCity = normalizeNullableString(req.body.storeOrCity);
+  if ("type" in req.body) update.type = normalizeNullableString(req.body.type);
+  if ("format" in req.body) update.format = normalizeNullableString(req.body.format);
+  if ("classification" in req.body) update.classification = normalizeNullableString(req.body.classification);
+  if ("date" in req.body) {
+    const normalizedDate = normalizePatchDate(req.body.date);
+    if (normalizedDate !== undefined) update.date = normalizedDate;
+  }
 
-  await db.collection("physicalEvents").doc(id).set(update, { merge: true });
-  const nd = { ...ds.data(), ...update };
-  await recomputeAllForEvent(nd);
+  await docRef.set(update, { merge: true });
+  const updatedDoc = { ...current, ...update };
+  if (!updatedDoc.eventId) updatedDoc.eventId = id;
+  await recomputeAllForEvent(updatedDoc);
 
-  res.json({ ok:true });
+  res.json(updatedDoc);
 });
 
 /** Delete event */

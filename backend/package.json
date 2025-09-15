@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node --env-file=.env src/server.js",
     "start": "node src/server.js",
-    "loadtest": "node src/live/load.test.js"
+    "loadtest": "node src/live/load.test.js",
+    "test": "vitest run src/live/routes.test.js src/physical/routes.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -14,5 +15,8 @@
     "firebase-admin": "^12.6.0",
     "nanoid": "^5.0.7",
     "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.1"
   }
 }
