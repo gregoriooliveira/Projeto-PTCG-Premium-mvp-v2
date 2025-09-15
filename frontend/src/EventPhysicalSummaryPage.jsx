@@ -4,7 +4,7 @@ import BackButton from "./components/BackButton";
 import PokemonAutocomplete from "./components/PokemonAutocomplete";
 import DeckLabel from "./components/DeckLabel.jsx";
 import DeckModal from "./components/DeckModal.jsx";
-import { getEvent } from "./eventsRepo.js";
+import { getEvent, updateEvent } from "./eventsRepo.js";
 import { postPhysicalRound, getPhysicalRounds } from "./services/physicalApi.js";
 import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
@@ -861,9 +861,33 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
         <DeckModal
           initialDeck={eventData.deck}
           onCancel={() => setEditingDeck(false)}
-          onSave={(deck) => {
-            setEventData((prev) => ({ ...prev, deck }));
-            setEditingDeck(false);
+          onSave={async (deck) => {
+            if (!eventData?.id) {
+              showToast("ID do evento não encontrado", "error");
+              return;
+            }
+            try {
+              const updated = await updateEvent(eventData.id, {
+                deckName: deck.deckName,
+                pokemons: [deck.pokemon1, deck.pokemon2],
+              });
+              if (!updated) {
+                throw new Error("Deck update returned empty response");
+              }
+              const mapped = mapIncomingEvent(updated, eventData.id);
+              const nextDeck =
+                mapped?.deck || {
+                  deckName: deck.deckName,
+                  pokemon1: deck.pokemon1,
+                  pokemon2: deck.pokemon2,
+                };
+              setEventData((prev) => ({ ...prev, deck: nextDeck }));
+              setEditingDeck(false);
+              showToast("Deck atualizado com sucesso!", "success");
+            } catch (err) {
+              console.error("Falha ao atualizar deck", err);
+              showToast("Não foi possível atualizar o deck. Tente novamente.", "error");
+            }
           }}
         />
       )}
