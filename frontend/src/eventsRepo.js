@@ -1,5 +1,5 @@
 import { api } from "./services/api.js";
-import { getPhysicalEvent, postPhysicalEvent } from "./services/physicalApi.js";
+import { getPhysicalEvent, postPhysicalEvent, deletePhysicalEvent } from "./services/physicalApi.js";
 
 const API_BASE = '/api/physical/events';
 
@@ -62,7 +62,7 @@ export async function updateEvent(id, patch) {
 
 export async function deleteEvent(id) {
   try {
-    return await api(`/api/physical/events/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    return await deletePhysicalEvent(id);
   } catch (err) {
     console.warn('Falha ao excluir evento', err);
     throw err;
