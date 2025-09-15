@@ -9,6 +9,9 @@ export const getPhysicalEvent = (id) =>
 export const getPhysicalRounds = (eventId) =>
   api(`/api/physical/events/${encodeURIComponent(eventId)}/rounds`);
 
+export const deletePhysicalEvent = (id) =>
+  api(`/api/physical/events/${encodeURIComponent(id)}`, { method: "DELETE" });
+
 // POST /api/physical/events/:eventId/rounds
 // Returns the saved round object from the backend
 export const postPhysicalRound = async (eventId, payload) => {
