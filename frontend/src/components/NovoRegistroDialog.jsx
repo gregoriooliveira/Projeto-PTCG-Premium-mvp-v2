@@ -6,6 +6,7 @@ import React, {
   useImperativeHandle,
 } from "react";
 import PropTypes from "prop-types";
+import { useNavigate } from "react-router-dom";
 import { createEvent } from "../eventsRepo.js";
 
 /**
@@ -13,7 +14,7 @@ import { createEvent } from "../eventsRepo.js";
  * - Overlay fixo com backdrop
  * - Refs para inputs de texto => digitação suave (sem perder foco)
  * - "Tipo do Evento" controlado para alternar Loja/Cidade
- * - Persistência no servidor e navegação por hash #/eventos/:id
+ * - Persistência no servidor e navegação para /tcg-fisico/eventos/:id
  */
 const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
   { renderTrigger, open: openProp, onOpenChange, onCreated },
@@ -32,6 +33,8 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     open: () => setOpen(true),
     close: () => setOpen(false),
   }));
+
+  const navigate = useNavigate();
 
   // foco inicial ao abrir
   useEffect(() => {
@@ -159,14 +162,9 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
       if (typeof onCreated === "function")
         onCreated({ ...payload, eventId });
 
-      if (eventId) {
-        history.pushState(
-          { eventFromProps: { ...payload, id: eventId } },
-          "",
-          "#/tcg-fisico/eventos/" + eventId,
-        );
-        window.dispatchEvent(new HashChangeEvent("hashchange"));
-      }
+        if (eventId) {
+          navigate("/tcg-fisico/eventos/" + eventId);
+        }
 
       setOpen(false);
     } catch (err) {
