@@ -44,12 +44,23 @@ function mapIncomingEvent(ev, hashId) {
   if (!ev) return null;
   const mapped = {
     id: ev.id || ev.eventId || hashId || "evt-demo-001",
-    name: ev.name || ev.nome || "—",
+    name: ev.name || ev.nome || ev.tourneyName || "—",
     storeOrCity: ev.storeOrCity || ev.storeName || ev.local || "—",
-    date: ev.date || ev.dia || "—",
+    date: ev.date || ev.dia || ev.createdAt || "—",
     type: ev.type || ev.tipo || "—",
     format: ev.format || ev.formato || "—",
-    classification: ev.classification || ev.classificacao || ev.colocacao || ev.placing || ev.rank || "—",
+    classification:
+      ev.classification ||
+      ev.classificacao ||
+      ev.colocacao ||
+      ev.placing ||
+      ev.rank ||
+      "—",
+    deck: {
+      deckName: ev.deckName || ev.deck?.deckName || "",
+      pokemon1: ev.pokemons?.[0] || ev.deck?.pokemon1 || "",
+      pokemon2: ev.pokemons?.[1] || ev.deck?.pokemon2 || "",
+    },
   };
   return mapped;
 }
@@ -249,7 +260,14 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
   const [rounds, setRounds] = useState([]);
   useEffect(() => {
     if (!eventId) return;
-    getPhysicalRounds(eventId).then((rs) => setRounds(rs || []));
+    getPhysicalRounds(eventId)
+      .then((rs) => {
+        setRounds(Array.isArray(rs) ? rs : []);
+      })
+      .catch((err) => {
+        console.error("Falha ao carregar rounds", err);
+        setRounds([]);
+      });
   }, [eventId]);
   const [editRoundIndex, setEditRoundIndex] = useState(null);
   const [editingDeck, setEditingDeck] = useState(false);
@@ -433,16 +451,24 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
 
     if (editRoundIndex !== null) {
       setRounds((rs) =>
-        rs.map((it, i) =>
-          i === editRoundIndex
-            ? { ...finalRound, id: finalRound.id || it.id, number: finalRound.number || it.number }
-            : it
-        )
+        Array.isArray(rs)
+          ? rs.map((it, i) =>
+              i === editRoundIndex
+                ? {
+                    ...finalRound,
+                    id: finalRound.id || it.id,
+                    number: finalRound.number || it.number,
+                  }
+                : it
+            )
+          : [finalRound]
       );
       setEditRoundIndex(null);
     } else {
-      setRounds((rs) => [...rs, finalRound]);
-      if (rounds.length === 0) setShowForm(false);
+      setRounds((rs) =>
+        Array.isArray(rs) ? [...rs, finalRound] : [finalRound]
+      );
+      if (!Array.isArray(rounds) || rounds.length === 0) setShowForm(false);
     }
     resetForm();
   }
