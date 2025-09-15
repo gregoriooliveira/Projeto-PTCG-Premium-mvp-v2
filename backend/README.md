@@ -127,6 +127,8 @@ Content-Type: application/json
 }
 ```
 
+O campo `dia` é opcional. Quando fornecido, é normalizado para o formato `YYYY-MM-DD` antes de ser salvo. Caso ausente, a API usa o timestamp de criação (`createdAt`) para definir `date` automaticamente. O valor de `createdAt` é mantido separadamente como um timestamp numérico para fins de auditoria e logs.
+
 Resposta: `201 { "eventId": "abc123" }`.
 
 `GET /api/physical/events/:id` retorna:
