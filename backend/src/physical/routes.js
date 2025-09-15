@@ -159,10 +159,46 @@ r.patch("/events/:id", authMiddleware, async (req, res) => {
 /** Delete event */
 r.delete("/events/:id", authMiddleware, async (req, res) => {
   const id = req.params.id;
-  const ds = await db.collection("physicalEvents").doc(id).get();
+  const docRef = db.collection("physicalEvents").doc(id);
+  const ds = await docRef.get();
   if (!ds.exists) return res.status(404).json({ error:"not_found" });
   const d = ds.data();
-  await db.collection("physicalEvents").doc(id).delete();
+  const roundDeletionPromises = [];
+  if (typeof docRef.collection === "function") {
+    const roundsCol = docRef.collection("rounds");
+    try {
+      const roundsSnap = await roundsCol.get();
+      const roundDocs = [];
+      if (roundsSnap && typeof roundsSnap.forEach === "function") {
+        roundsSnap.forEach((roundDoc) => roundDocs.push(roundDoc));
+      } else if (roundsSnap && Array.isArray(roundsSnap.docs)) {
+        roundDocs.push(...roundsSnap.docs);
+      }
+      for (const roundDoc of roundDocs) {
+        if (roundDoc?.ref && typeof roundDoc.ref.delete === "function") {
+          roundDeletionPromises.push(roundDoc.ref.delete());
+        } else if (
+          roundDoc?.id != null &&
+          typeof roundsCol.doc === "function"
+        ) {
+          roundDeletionPromises.push(roundsCol.doc(roundDoc.id).delete());
+        }
+      }
+    } catch (error) {
+      console.error(`[physical/events:${id}] rounds cleanup failed`, error);
+    }
+  }
+  if (roundDeletionPromises.length) {
+    await Promise.all(roundDeletionPromises);
+  }
+  if (d.rawLogId) {
+    try {
+      await db.collection("rawLogs").doc(d.rawLogId).delete();
+    } catch (error) {
+      console.error(`[physical/events:${id}] rawLog cleanup failed`, error);
+    }
+  }
+  await docRef.delete();
   await recomputeAllForEvent(d);
   res.json({ ok:true });
 });
