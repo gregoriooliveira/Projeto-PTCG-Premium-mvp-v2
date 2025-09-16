@@ -22,6 +22,7 @@ This doc is the living “source of truth” for how the **PTCG Premium App** is
 All routes are resolved inside **`src/App.jsx`**. The router logic is a switch-like chain based on `hashParts`:
 
 - **Home**: `#/`
+- **Oponentes (agregado)**: `#/oponentes`
 - **Pokémon TCG Físico (overview)**: `#/tcg-fisico`
 - **Novo Registro / Registro**: `#/registro/:id`
 - **Evento Físico (resumo + rounds)**: `#/tcg-fisico/eventos/:id`
@@ -45,6 +46,7 @@ history.pushState({ eventFromProps: evento }, '', `#/tcg-fisico/eventos/${evento
 - **HomePage** — dashboards & summaries.
 - **PhysicalPageV2** — Pokémon TCG Físico overview.
 - **EventPhysicalSummaryPage** — **new** page to record and display rounds for a specific **Físico** event. File: `src/EventPhysicalSummaryPage.jsx`.
+- **OpponentsPage** — aggregated opponent insights (`#/oponentes`).
 
 ### 3.2 EventPhysicalSummaryPage Overview
 - **Header (left)**: Title (event name), date, chips (Store/City + Format).
@@ -68,6 +70,11 @@ history.pushState({ eventFromProps: evento }, '', `#/tcg-fisico/eventos/${evento
 - `TagToggle` (for No show / Bye)
 
 > These are currently defined **inline** in `EventPhysicalSummaryPage.jsx` to avoid external breakage. If we factor them out, reflect imports here.
+
+### 3.4 OpponentsPage Overview
+- **Data source**: `OpponentsPage.jsx` calls `getOpponentsAgg` to merge opponent statistics from **TCG Live** and **TCG Físico**, deduplicating entries across both feeds.
+- **Deck enrichment**: after aggregation, each deck entry is enriched via additional lookups so avatars, typing and metadata stay consistent regardless of origin.
+- **Output**: surfaces unified standings plus quick filters so squads can spot repeat matchups irrespective of where the games happened.
 
 ---
 
@@ -146,6 +153,12 @@ type Event = {
 - Replace placeholder avatars with Pokémon assets.
 - Add a **store consolidation page** with a filter (unique page; later feature).
 - Extract `TagToggle`, `ToggleGroup`, etc. to a shared UI module once stable.
+
+---
+
+## 9) Logs & Deep Links
+
+- Expanded log entries include a `source` property that deep-links to the originating record: `#/tcg-live/logs/:id` for **TCG Live** or `#/tcg-fisico/eventos/:id` for **TCG Físico** events.
 
 ---
 
