@@ -822,39 +822,497 @@ r.get("/decks/:deck/logs", async (req, res) => {
 
 export default r;
 
+function computeEventTimestamp(ev = {}) {
+  const parseCandidate = (value) => {
+    if (value === undefined || value === null) return null;
+    if (value instanceof Date) {
+      const time = value.getTime();
+      return Number.isNaN(time) ? null : time;
+    }
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const numeric = Number(trimmed);
+      if (Number.isFinite(numeric)) return numeric;
+      const parsed = Date.parse(trimmed);
+      if (!Number.isNaN(parsed)) return parsed;
+    }
+    return null;
+  };
+  const created = parseCandidate(ev?.createdAt);
+  if (created !== null) return created;
+  const date = parseCandidate(ev?.date);
+  if (date !== null) return date;
+  return 0;
+}
+
+function normalizeResultToken(value) {
+  if (value === undefined || value === null) return null;
+  const token = String(value).trim().toUpperCase();
+  if (!token) return null;
+  if (token === "W" || token.startsWith("WIN") || token === "V" || token.startsWith("VIT")) return "W";
+  if (token === "L" || token.startsWith("LOS") || token === "D" || token.startsWith("DER")) return "L";
+  if (token === "T" || token.startsWith("TIE") || token === "E" || token.startsWith("EMP")) return "T";
+  if (token.length === 1 && ["W", "L", "T"].includes(token)) return token;
+  return null;
+}
+
+function normalizePokemonList(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const raw of list) {
+    let value = null;
+    if (typeof raw === "string") value = raw;
+    else if (raw && typeof raw === "object") {
+      if (typeof raw.slug === "string") value = raw.slug;
+      else if (typeof raw.name === "string") value = raw.name;
+      else if (typeof raw.id === "string") value = raw.id;
+    }
+    if (!value) continue;
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) continue;
+    if (!out.includes(trimmed)) out.push(trimmed);
+    if (out.length >= 4) break;
+  }
+  return out;
+}
+
+function combinePokemonHintsList(player = [], opponent = []) {
+  const merged = [];
+  for (const value of normalizePokemonList(player)) {
+    if (!merged.includes(value)) merged.push(value);
+    if (merged.length >= 4) return merged;
+  }
+  for (const value of normalizePokemonList(opponent)) {
+    if (!merged.includes(value)) merged.push(value);
+    if (merged.length >= 4) break;
+  }
+  return merged;
+}
+
+function resultFromCounts(counts) {
+  if (!counts || typeof counts !== "object") return null;
+  const w = Number(counts.W || 0);
+  const l = Number(counts.L || 0);
+  const t = Number(counts.T || 0);
+  if (w > 0 && l === 0 && t === 0) return "W";
+  if (l > 0 && w === 0 && t === 0) return "L";
+  if (t > 0 && w === 0 && l === 0) return "T";
+  if (w > l && w >= t) return "W";
+  if (l > w && l >= t) return "L";
+  if (t > w && t >= l) return "T";
+  if (w > 0 && l === 0) return "W";
+  if (l > 0 && w === 0) return "L";
+  if (t > 0) return "T";
+  return null;
+}
+
+function chooseAggDeck(entry = {}) {
+  if (!entry || typeof entry !== "object") return null;
+  const decks = Array.isArray(entry.decks) ? entry.decks.slice() : [];
+  decks.sort((a, b) => (Number(b?.total) || 0) - (Number(a?.total) || 0));
+  if (decks.length) {
+    const top = decks[0] || {};
+    return {
+      deckKey: top.deckKey || "",
+      deckName: top.deckName || "",
+      pokemons: Array.isArray(top.pokemons) ? [...top.pokemons] : [],
+      counts: top.counts ? { ...top.counts } : undefined,
+    };
+  }
+  if (entry.topDeckKey || entry.topDeckName || entry.topPokemons) {
+    return {
+      deckKey: entry.topDeckKey || "",
+      deckName: entry.topDeckName || "",
+      pokemons: Array.isArray(entry.topPokemons) ? [...entry.topPokemons] : [],
+      counts: entry.counts ? { ...entry.counts } : undefined,
+    };
+  }
+  return null;
+}
+
+function finalizeRow(baseRow, overrides = {}, { playerPokemons = [], opponentPokemonFallback = [], rawTarget = "" } = {}) {
+  const merged = { ...baseRow, ...overrides };
+  merged.id = baseRow.id;
+  merged.eventId = baseRow.eventId;
+  merged.source = "physical";
+  merged.createdAt = merged.createdAt ?? baseRow.createdAt ?? null;
+  merged.date = merged.date ?? baseRow.date ?? merged.createdAt ?? null;
+  merged.ts =
+    typeof merged.ts === "number" && Number.isFinite(merged.ts)
+      ? merged.ts
+      : baseRow.ts ?? computeEventTimestamp(merged);
+  merged.deck = merged.deck ?? baseRow.deck ?? null;
+  merged.playerDeck = merged.playerDeck ?? merged.deck ?? baseRow.playerDeck ?? null;
+  merged.playerDeckKey = merged.playerDeckKey ?? baseRow.playerDeckKey ?? null;
+  merged.event = merged.event ?? baseRow.event ?? merged.eventName ?? null;
+  merged.eventName = merged.eventName ?? merged.event ?? baseRow.eventName ?? null;
+  merged.you = merged.you ?? baseRow.you ?? null;
+  merged.score = merged.score ?? baseRow.score ?? null;
+  merged.placement = merged.placement ?? baseRow.placement ?? null;
+  merged.round = merged.round ?? baseRow.round ?? null;
+  const playerList = Array.isArray(playerPokemons) && playerPokemons.length
+    ? [...playerPokemons]
+    : Array.isArray(baseRow.playerPokemons)
+    ? [...baseRow.playerPokemons]
+    : [];
+  merged.playerPokemons = playerList;
+  const opponentList =
+    overrides.opponentPokemons !== undefined
+      ? normalizePokemonList(overrides.opponentPokemons)
+      : normalizePokemonList(baseRow.opponentPokemons ?? opponentPokemonFallback);
+  if (opponentList.length) {
+    merged.opponentPokemons = opponentList;
+  } else {
+    delete merged.opponentPokemons;
+  }
+  const fallbackOpponentName = rawTarget ? normalizeName(rawTarget) : null;
+  merged.opponent = merged.opponent ?? baseRow.opponent ?? fallbackOpponentName ?? null;
+  merged.opponentName =
+    merged.opponentName ?? merged.opponent ?? baseRow.opponentName ?? fallbackOpponentName ?? null;
+  if (overrides.counts) merged.counts = { ...overrides.counts };
+  else if (baseRow.counts && merged.counts === undefined) merged.counts = { ...baseRow.counts };
+  merged.pokemons = combinePokemonHintsList(playerList, merged.opponentPokemons || opponentPokemonFallback);
+  merged.result =
+    normalizeResultToken(overrides.result ?? merged.result ?? baseRow.result) ||
+    resultFromCounts(merged.counts) ||
+    null;
+  return merged;
+}
+
+async function buildRowsFromRounds(eventDocId, normalizedTarget, baseRow, aggregatorEntry, playerPokemons, rawTarget, eventData) {
+  if (!eventDocId) return [];
+  let eventRef;
+  try {
+    eventRef = db.collection("physicalEvents").doc(eventDocId);
+  } catch {
+    return [];
+  }
+  if (!eventRef || typeof eventRef.collection !== "function") return [];
+  let snap;
+  try {
+    snap = await eventRef.collection("rounds").get();
+  } catch (error) {
+    console.error(`[GET /physical/logs] rounds lookup failed for ${eventDocId}`, error);
+    return [];
+  }
+  const docs = Array.isArray(snap?.docs) ? snap.docs : [];
+  if (!docs.length) return [];
+  const deckFromAgg = chooseAggDeck(aggregatorEntry || {});
+  const fallbackOppPokemons = normalizePokemonList(
+    (deckFromAgg?.pokemons) ||
+      (aggregatorEntry?.topPokemons) ||
+      (eventData?.opponentPokemons) ||
+      baseRow.opponentPokemons ||
+      [],
+  );
+  const rows = [];
+  for (const doc of docs) {
+    let roundData;
+    try {
+      roundData = typeof doc.data === "function" ? doc.data() : doc.data;
+    } catch {
+      roundData = null;
+    }
+    if (!roundData) continue;
+    const normalizedRoundName = normalizeName(roundData.opponentName || roundData.opponent || "");
+    if (normalizedTarget && normalizedRoundName !== normalizedTarget) continue;
+    const roundPokemonRaw = extractPokemonSlugs(roundData);
+    if (Array.isArray(roundData.opponentPokemons)) {
+      roundPokemonRaw.push(...roundData.opponentPokemons);
+    }
+    const opponentPokemons = normalizePokemonList(roundPokemonRaw);
+    const deckNameFromRound =
+      roundData.opponentDeckName || roundData.opponentDeck || roundData.deck_opponent || null;
+    const deckKeyFromRound = roundData.normOppDeckKey || roundData.opponentDeckKey || null;
+    const rowResult =
+      normalizeResultToken(roundData.result) ||
+      normalizeResultToken(computeRoundResult(roundData)) ||
+      resultFromCounts(aggregatorEntry?.counts) ||
+      baseRow.result;
+    const overrides = {
+      opponent: roundData.opponentName || roundData.opponent || aggregatorEntry?.opponentName || baseRow.opponent,
+      opponentName:
+        roundData.opponentName || roundData.opponent || aggregatorEntry?.opponentName || baseRow.opponentName,
+      opponentDeck:
+        deckNameFromRound ||
+        deckFromAgg?.deckName ||
+        deckFromAgg?.deckKey ||
+        aggregatorEntry?.topDeckName ||
+        aggregatorEntry?.topDeckKey ||
+        baseRow.opponentDeck,
+      opponentDeckKey:
+        deckKeyFromRound ||
+        deckFromAgg?.deckKey ||
+        aggregatorEntry?.topDeckKey ||
+        baseRow.opponentDeckKey,
+      opponentPokemons,
+      result: rowResult,
+      round: roundData.round ?? roundData.roundNumber ?? baseRow.round ?? null,
+    };
+    if (aggregatorEntry?.counts) overrides.counts = { ...aggregatorEntry.counts };
+    rows.push(
+      finalizeRow(baseRow, overrides, {
+        playerPokemons,
+        opponentPokemonFallback: fallbackOppPokemons,
+        rawTarget,
+      }),
+    );
+  }
+  return rows;
+}
+
+function buildRowFromAggregator(baseRow, aggregatorEntry, playerPokemons, eventData, options = {}) {
+  if (!aggregatorEntry || typeof aggregatorEntry !== "object") {
+    return finalizeRow(baseRow, {}, { playerPokemons, rawTarget: options.rawTarget || "" });
+  }
+  const deck = chooseAggDeck(aggregatorEntry);
+  const opponentPokemons = normalizePokemonList(
+    (deck?.pokemons) ||
+      aggregatorEntry.topPokemons ||
+      eventData?.opponentPokemons ||
+      baseRow.opponentPokemons ||
+      [],
+  );
+  const overrides = {
+    opponent: aggregatorEntry.opponentName || baseRow.opponent,
+    opponentName:
+      aggregatorEntry.opponentName || baseRow.opponentName || aggregatorEntry.opponent || baseRow.opponent,
+    opponentDeck:
+      deck?.deckName ||
+      deck?.deckKey ||
+      aggregatorEntry.topDeckName ||
+      aggregatorEntry.topDeckKey ||
+      baseRow.opponentDeck,
+    opponentDeckKey: deck?.deckKey || aggregatorEntry.topDeckKey || baseRow.opponentDeckKey,
+    opponentPokemons,
+    result: resultFromCounts(aggregatorEntry.counts) || baseRow.result,
+  };
+  if (aggregatorEntry.counts) overrides.counts = { ...aggregatorEntry.counts };
+  return finalizeRow(baseRow, overrides, {
+    playerPokemons,
+    opponentPokemonFallback: opponentPokemons,
+    rawTarget: options.rawTarget || "",
+  });
+}
+
+function buildFallbackRow(baseRow, playerPokemons, eventData, aggregatorEntry, { normalizedTarget, rawTarget }) {
+  const deck = chooseAggDeck(aggregatorEntry || {});
+  const opponentPokemons = normalizePokemonList(
+    (deck?.pokemons) ||
+      aggregatorEntry?.topPokemons ||
+      eventData?.opponentPokemons ||
+      baseRow.opponentPokemons ||
+      [],
+  );
+  const eventCountsValue = eventCounts(eventData);
+  const counts =
+    (aggregatorEntry?.counts && { ...aggregatorEntry.counts }) ||
+    (eventCountsValue ? { ...eventCountsValue } : undefined);
+  const fallbackResult =
+    resultFromCounts(counts) ||
+    normalizeResultToken(eventData?.result || eventData?.outcome) ||
+    baseRow.result ||
+    null;
+  const fallbackOpponentName =
+    aggregatorEntry?.opponentName ||
+    baseRow.opponent ||
+    baseRow.opponentName ||
+    (rawTarget ? normalizeName(rawTarget) : normalizedTarget) ||
+    null;
+  const overrides = {
+    opponent: fallbackOpponentName,
+    opponentName: fallbackOpponentName,
+    opponentDeck:
+      deck?.deckName ||
+      deck?.deckKey ||
+      eventData?.opponentDeck ||
+      eventData?.opponentDeckName ||
+      baseRow.opponentDeck,
+    opponentDeckKey: deck?.deckKey || eventData?.opponentDeckKey || baseRow.opponentDeckKey,
+    opponentPokemons,
+    result: fallbackResult,
+  };
+  if (counts) overrides.counts = counts;
+  return finalizeRow(baseRow, overrides, {
+    playerPokemons,
+    opponentPokemonFallback: opponentPokemons,
+    rawTarget: rawTarget || normalizedTarget || "",
+  });
+}
+
+async function buildEventRows(ev, docId, { normalizedTarget = null, rawTarget = "" } = {}) {
+  const eventId = ev?.eventId || docId || null;
+  const ts = computeEventTimestamp(ev);
+  const playerDeckName = ev?.deckName || ev?.playerDeckName || ev?.myDeck || null;
+  const playerDeckKey = ev?.playerDeckKey || (playerDeckName ? normalizeDeckKey(playerDeckName) : null);
+  const eventName =
+    ev?.event ||
+    ev?.tournament ||
+    ev?.tourneyName ||
+    ev?.tournamentName ||
+    ev?.physicalEvent ||
+    ev?.name ||
+    null;
+  const playerPokemons = normalizePokemonList(ev?.pokemons || ev?.userPokemons || []);
+  const opponentPokemons = normalizePokemonList(ev?.opponentPokemons || []);
+  const countsValue = eventCounts(ev);
+  const baseRow = {
+    id: eventId || docId || null,
+    eventId: eventId || docId || null,
+    createdAt: ev?.createdAt || null,
+    date: ev?.date || ev?.createdAt || null,
+    ts,
+    deck: playerDeckName || null,
+    playerDeck: playerDeckName || null,
+    playerDeckKey: playerDeckKey || null,
+    event: eventName || null,
+    eventName: eventName || null,
+    you: ev?.you || ev?.player || ev?.user || null,
+    opponent: ev?.opponent || ev?.opponentName || ev?.name || null,
+    opponentName: ev?.opponent || ev?.opponentName || ev?.name || null,
+    opponentDeck: ev?.opponentDeck || ev?.opponentDeckName || ev?.deck_opponent || null,
+    opponentDeckKey: ev?.opponentDeckKey || null,
+    playerPokemons,
+    opponentPokemons,
+    pokemons: combinePokemonHintsList(playerPokemons, opponentPokemons),
+    score: ev?.score || ev?.placar || null,
+    result: normalizeResultToken(ev?.result || ev?.outcome) || null,
+    placement: ev?.placement || null,
+    round: ev?.round || null,
+    counts: countsValue ? { ...countsValue } : undefined,
+    source: "physical",
+  };
+  if (baseRow.event && !baseRow.eventName) baseRow.eventName = baseRow.event;
+  if (baseRow.eventName && !baseRow.event) baseRow.event = baseRow.eventName;
+  const aggEntries = new Map();
+  for (const entry of Array.isArray(ev?.opponentsAgg) ? ev.opponentsAgg : []) {
+    if (!entry || typeof entry !== "object") continue;
+    const key = normalizeName(entry.opponentName || entry.opponent || "");
+    if (!key) continue;
+    aggEntries.set(key, entry);
+  }
+  const normalizedKey = normalizedTarget ? normalizeName(normalizedTarget) : "";
+  if (normalizedKey) {
+    const aggEntry = aggEntries.get(normalizedKey) || null;
+    const roundRows = await buildRowsFromRounds(
+      docId || eventId,
+      normalizedKey,
+      baseRow,
+      aggEntry,
+      playerPokemons,
+      rawTarget,
+      ev,
+    );
+    if (roundRows.length) return roundRows;
+    if (aggEntry) {
+      return [buildRowFromAggregator(baseRow, aggEntry, playerPokemons, ev, { rawTarget })];
+    }
+    return [buildFallbackRow(baseRow, playerPokemons, ev, null, { normalizedTarget: normalizedKey, rawTarget })];
+  }
+  const firstAgg = aggEntries.size ? aggEntries.values().next().value : null;
+  if (firstAgg) {
+    return [buildRowFromAggregator(baseRow, firstAgg, playerPokemons, ev, { rawTarget })];
+  }
+  return [buildFallbackRow(baseRow, playerPokemons, ev, null, { normalizedTarget: null, rawTarget })];
+}
+
 r.get("/logs", async (req, res) => {
   try {
     const q = req.query || {};
     const limit = Math.max(1, Math.min(Number(q.limit || 10000), 10000));
     const offset = Math.max(0, Number(q.offset || 0));
-    const nameRaw = String(q.opponent || q.opponentName || q.name || q.q || "").trim();
-    const name = normalizeName(nameRaw);
+    const rawOpponent = String(q.opponent || q.opponentName || q.name || q.q || "").trim();
+    const normalizedOpponent = normalizeName(rawOpponent);
+    const fetchLimit = limit + offset;
 
-    let ref = db.collection("physicalEvents");
-    if (name) ref = ref.where("opponent", "==", name);
-    ref = ref.orderBy("createdAt", "desc").limit(limit + offset);
+    const baseRef = db.collection("physicalEvents");
+    const queries = [];
+    if (normalizedOpponent) {
+      queries.push(
+        baseRef
+          .where("opponent", "==", normalizedOpponent)
+          .orderBy("createdAt", "desc")
+          .limit(fetchLimit),
+      );
+      queries.push(
+        baseRef
+          .where("opponentsList", "array-contains", normalizedOpponent)
+          .orderBy("createdAt", "desc")
+          .limit(fetchLimit),
+      );
+    } else {
+      queries.push(baseRef.orderBy("createdAt", "desc").limit(fetchLimit));
+    }
 
-    const snap = await ref.get();
-    const docs = snap.docs.map(d => d.data());
-    const sliced = offset ? docs.slice(offset) : docs;
+    const snapshots = await Promise.all(
+      queries.map(async (queryRef) => {
+        try {
+          return await queryRef.get();
+        } catch (error) {
+          console.error("[GET /physical/logs] query failed", error);
+          return null;
+        }
+      }),
+    );
 
-    const rows = sliced.slice(0, limit).map(ev => ({
-      id: ev.eventId || ev.id || null,
-      createdAt: ev.createdAt || ev.date || null,
-      date: ev.date || ev.createdAt || null,
-      deck: ev.deckName || ev.playerDeckName || ev.myDeck || null,
-      opponentDeck: ev.opponentDeck || ev.opponentDeckName || ev.deck_opponent || null,
-      score: ev.score || ev.placar || null,
-      result: ev.result || ev.outcome || null,
-      event: ev.event || ev.tournament || ev.tourneyName || ev.tournamentName || ev.physicalEvent || null,
-      opponent: ev.opponent || ev.opponentName || ev.name || null,
-      you: ev.you || ev.player || ev.user || null
-    }));
+    const dedupe = new Map();
+    for (const snap of snapshots) {
+      if (!snap) continue;
+      const docs = Array.isArray(snap.docs) ? snap.docs : [];
+      for (const doc of docs) {
+        if (!doc) continue;
+        let data;
+        try {
+          data = typeof doc.data === "function" ? doc.data() : doc.data;
+        } catch {
+          data = null;
+        }
+        if (!data) continue;
+        const eventId = data.eventId || doc.id;
+        if (!eventId) continue;
+        const ts = computeEventTimestamp(data);
+        const existing = dedupe.get(eventId);
+        if (!existing || ts > existing.ts) {
+          dedupe.set(eventId, { docId: doc.id, data, ts });
+        }
+      }
+    }
 
-    return res.json({ ok: true, total: docs.length, rows });
+    const events = Array.from(dedupe.values());
+    events.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+
+    const rows = [];
+    for (const entry of events) {
+      const eventRows = await buildEventRows(entry.data, entry.docId, {
+        normalizedTarget: normalizedOpponent || null,
+        rawTarget: rawOpponent,
+      });
+      for (const row of eventRows) {
+        row.ts = typeof row.ts === "number" && Number.isFinite(row.ts)
+          ? row.ts
+          : entry.ts ?? computeEventTimestamp(entry.data);
+        if (!row.createdAt && entry.data.createdAt != null) row.createdAt = entry.data.createdAt;
+        if (!row.date) row.date = entry.data.date || entry.data.createdAt || row.createdAt || null;
+        row.source = "physical";
+        rows.push(row);
+      }
+    }
+
+    rows.sort((a, b) => {
+      const aTs = typeof a.ts === "number" && Number.isFinite(a.ts) ? a.ts : computeEventTimestamp(a);
+      const bTs = typeof b.ts === "number" && Number.isFinite(b.ts) ? bTs : computeEventTimestamp(b);
+      return bTs - aTs;
+    });
+
+    const total = rows.length;
+    const paged = rows.slice(offset, offset + limit);
+
+    return res.json({ ok: true, total, rows: paged });
   } catch (e) {
     console.error("[GET /physical/logs]", e);
-    return res.status(500).json({ ok:false, error:"logs_list_failed" });
+    return res.status(500).json({ ok: false, error: "logs_list_failed" });
   }
 });
 

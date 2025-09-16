@@ -31,13 +31,124 @@ function createRoundSnapshot(eventId, roundId, roundData) {
 const db = {
   collection: (collectionName) => {
     if (collectionName === "physicalEvents") {
+      const coerceComparableValue = (value) => {
+        if (value === undefined || value === null) {
+          return { type: "null", value: null };
+        }
+        if (typeof value === "number" && Number.isFinite(value)) {
+          return { type: "number", value };
+        }
+        if (value instanceof Date) {
+          return { type: "number", value: value.getTime() };
+        }
+        if (typeof value === "string") {
+          const trimmed = value.trim();
+          if (!trimmed) return { type: "string", value: "" };
+          const numeric = Number(trimmed);
+          if (Number.isFinite(numeric)) {
+            return { type: "number", value: numeric };
+          }
+          const parsed = Date.parse(trimmed);
+          if (!Number.isNaN(parsed)) {
+            return { type: "number", value: parsed };
+          }
+          return { type: "string", value: trimmed };
+        }
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) {
+          return { type: "number", value: numeric };
+        }
+        return { type: "string", value: String(value) };
+      };
+
+      const compareValues = (a, b) => {
+        const av = coerceComparableValue(a);
+        const bv = coerceComparableValue(b);
+        if (av.value === null && bv.value === null) return 0;
+        if (av.value === null) return -1;
+        if (bv.value === null) return 1;
+        if (av.type === "string" || bv.type === "string") {
+          return String(av.value).localeCompare(String(bv.value));
+        }
+        return Number(av.value) - Number(bv.value);
+      };
+
+      const matchesFilter = (data, { field, op, value }) => {
+        const fieldValue = data?.[field];
+        if (op === "==") return fieldValue === value;
+        if (op === "array-contains") {
+          return Array.isArray(fieldValue) && fieldValue.includes(value);
+        }
+        throw new Error(`Unsupported operator ${op}`);
+      };
+
+      const runQuery = ({ filters = [], orderBys = [], limitValue = null } = {}) => {
+        let entries = Object.entries(eventsStore);
+        if (filters.length) {
+          entries = entries.filter(([, data]) =>
+            filters.every((filter) => matchesFilter(data, filter)),
+          );
+        }
+        const sorted = orderBys.length
+          ? [...entries].sort((aEntry, bEntry) => {
+              for (const { field, direction } of orderBys) {
+                const dir = String(direction || "asc").toLowerCase() === "desc" ? -1 : 1;
+                const cmp = compareValues(aEntry[1]?.[field], bEntry[1]?.[field]);
+                if (cmp !== 0) return cmp * dir;
+              }
+              return aEntry[0] < bEntry[0] ? -1 : aEntry[0] > bEntry[0] ? 1 : 0;
+            })
+          : [...entries].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+        const limited =
+          typeof limitValue === "number" && Number.isFinite(limitValue)
+            ? sorted.slice(0, limitValue)
+            : sorted;
+        const docs = limited.map(([id, data]) => ({
+          id,
+          data: () => clone(data),
+        }));
+        return {
+          docs,
+          forEach(callback) {
+            docs.forEach((doc) => callback(doc));
+          },
+        };
+      };
+
+      const createQuery = (state = { filters: [], orderBys: [], limitValue: null }) => ({
+        where(field, op, value) {
+          return createQuery({
+            filters: [...state.filters, { field, op, value }],
+            orderBys: state.orderBys,
+            limitValue: state.limitValue,
+          });
+        },
+        orderBy(field, direction = "asc") {
+          return createQuery({
+            filters: state.filters,
+            orderBys: [...state.orderBys, { field, direction }],
+            limitValue: state.limitValue,
+          });
+        },
+        limit(n) {
+          const numeric = Number(n);
+          return createQuery({
+            filters: state.filters,
+            orderBys: state.orderBys,
+            limitValue: Number.isFinite(numeric) ? numeric : state.limitValue,
+          });
+        },
+        async get() {
+          return runQuery(state);
+        },
+      });
+
+      const baseQuery = createQuery();
+
       return {
         doc: (id) => ({
           async get() {
-            const exists = Object.prototype.hasOwnProperty.call(
-              eventsStore,
-              id,
-            );
+            const exists = Object.prototype.hasOwnProperty.call(eventsStore, id);
             const snapshot = exists ? clone(eventsStore[id]) : undefined;
             return {
               exists,
@@ -79,6 +190,12 @@ const db = {
             };
           },
         }),
+        where: baseQuery.where,
+        orderBy: baseQuery.orderBy,
+        limit: baseQuery.limit,
+        async get() {
+          return runQuery();
+        },
       };
     }
     if (collectionName === "rawLogs") {
@@ -129,6 +246,13 @@ function getDeleteHandler() {
     (l) => l.route && l.route.path === "/events/:id" && l.route.methods.delete,
   );
   return layer.route.stack[1].handle;
+}
+
+function getLogsHandler() {
+  const layer = router.stack.find(
+    (l) => l.route && l.route.path === "/logs" && l.route.methods.get,
+  );
+  return layer.route.stack[0].handle;
 }
 
 function createRes() {
@@ -288,5 +412,142 @@ describe("physical routes DELETE /events/:id", () => {
     const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
     expect(prevArg).toMatchObject(originalEvent);
     expect(nextArg).toBeNull();
+  });
+});
+
+describe("physical routes GET /logs", () => {
+  beforeEach(() => {
+    eventsStore = {};
+    roundsStore = {};
+    rawLogsStore = {};
+    recomputeAllForEvent.mockClear();
+  });
+
+  it("merges results using opponentsAgg data when querying by opponent name", async () => {
+    eventsStore = {
+      evt1: {
+        eventId: "evt1",
+        createdAt: 2000,
+        date: "2024-06-01",
+        deckName: "Pika Control",
+        pokemons: ["pikachu"],
+        opponentsList: ["Brock"],
+        opponentsAgg: [
+          {
+            opponentName: "Brock",
+            counts: { W: 1, L: 0, T: 0 },
+            decks: [
+              {
+                deckKey: "fighting deck",
+                deckName: "Fighting Deck",
+                pokemons: ["machamp"],
+                counts: { W: 1, L: 0, T: 0 },
+                total: 1,
+              },
+            ],
+            topDeckKey: "fighting deck",
+            topDeckName: "Fighting Deck",
+            topPokemons: ["machamp"],
+          },
+        ],
+        event: "League Challenge",
+      },
+    };
+
+    const handler = getLogsHandler();
+    const res = createRes();
+
+    await handler({ query: { opponent: "Brock", limit: "5" } }, res);
+
+    expect(res.body.ok).toBe(true);
+    expect(res.body.total).toBe(1);
+    expect(res.body.rows).toHaveLength(1);
+    const [row] = res.body.rows;
+    expect(row).toMatchObject({
+      eventId: "evt1",
+      deck: "Pika Control",
+      opponentDeck: "Fighting Deck",
+      result: "W",
+      source: "physical",
+    });
+    expect(row.pokemons).toEqual(expect.arrayContaining(["pikachu", "machamp"]));
+    expect(row.event ?? row.eventName).toBe("League Challenge");
+  });
+
+  it("falls back to rounds data when aggregated opponent block is unavailable", async () => {
+    eventsStore = {
+      evt2: {
+        eventId: "evt2",
+        createdAt: 3000,
+        deckName: "Charizard Control",
+        pokemons: ["charizard"],
+        opponent: "Jessie",
+        event: "Local League",
+      },
+    };
+    roundsStore = {
+      evt2: {
+        r1: {
+          opponentName: "Jessie",
+          opponentDeckName: "Team Rocket",
+          result: "L",
+          oppMonASlug: "ekans",
+        },
+      },
+    };
+
+    const handler = getLogsHandler();
+    const res = createRes();
+
+    await handler({ query: { opponent: "Jessie", limit: "5" } }, res);
+
+    expect(res.body.ok).toBe(true);
+    expect(res.body.total).toBe(1);
+    expect(res.body.rows).toHaveLength(1);
+    const [row] = res.body.rows;
+    expect(row).toMatchObject({
+      eventId: "evt2",
+      opponentDeck: "Team Rocket",
+      result: "L",
+      source: "physical",
+    });
+    expect(row.pokemons).toEqual(expect.arrayContaining(["charizard", "ekans"]));
+  });
+
+  it("deduplicates events returned by multiple queries", async () => {
+    eventsStore = {
+      evt3: {
+        eventId: "evt3",
+        createdAt: 4000,
+        deckName: "Blastoise Control",
+        pokemons: ["blastoise"],
+        opponent: "James",
+        opponentsList: ["James"],
+        opponentsAgg: [
+          {
+            opponentName: "James",
+            counts: { W: 0, L: 1, T: 0 },
+            topDeckKey: "control",
+            topDeckName: "Control",
+            topPokemons: ["weezing"],
+          },
+        ],
+        event: "City League",
+      },
+    };
+
+    const handler = getLogsHandler();
+    const res = createRes();
+
+    await handler({ query: { opponent: "James", limit: "5" } }, res);
+
+    expect(res.body.ok).toBe(true);
+    expect(res.body.total).toBe(1);
+    expect(res.body.rows).toHaveLength(1);
+    const [row] = res.body.rows;
+    expect(row.eventId).toBe("evt3");
+    expect(row.result).toBe("L");
+    expect(row.source).toBe("physical");
+    expect(row.pokemons).toEqual(expect.arrayContaining(["blastoise", "weezing"]));
   });
 });
