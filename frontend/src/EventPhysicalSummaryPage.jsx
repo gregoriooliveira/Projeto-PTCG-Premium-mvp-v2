@@ -163,10 +163,10 @@ function normalizePokemonPair(p1, p2) {
   return `${x}/${y}`;
 }
 
-function computeMatchResult(round) {
+function computeMatchResult(round = {}) {
   const flags = round?.flags || round;
   if (flags?.bye || flags?.noShow) return "V";
-  const games = [round.g1 || {}, round.g2 || {}, round.g3 || {}];
+  const games = [round?.g1 ?? {}, round?.g2 ?? {}, round?.g3 ?? {}];
   let v = 0,
     d = 0,
     e = 0;
