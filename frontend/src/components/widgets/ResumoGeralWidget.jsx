@@ -32,7 +32,6 @@ export default function ResumoGeralWidget({ title, variant, winRate, center, top
             deckName={topDeck?.deckName}
             pokemonHints={topDeck?.pokemons}
             stacked
-            showIcons={false}
             className="items-end text-right"
           />
         </div>
