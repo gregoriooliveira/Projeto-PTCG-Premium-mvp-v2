@@ -62,7 +62,33 @@ export const getLiveTournament = (id) => api(`/api/live/tournaments/${encodeURIC
 export const suggestLiveTournaments = (query) => api(`/api/live/tournaments/suggest?query=${encodeURIComponent(query||'')}`);
 
 /* Opponents */
-export const getOpponentsAgg = () => api(`/api/live/opponents-agg`);
+const unwrapOpponentsAgg = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.rows)) return payload.rows;
+  return [];
+};
+
+export const getLiveOpponentsAgg = () => api(`/api/live/opponents-agg`);
+export const getPhysicalOpponentsAgg = () => api(`/api/physical/opponents-agg`);
+
+export const getOpponentsAgg = async () => {
+  const [live, physical] = await Promise.allSettled([
+    getLiveOpponentsAgg(),
+    getPhysicalOpponentsAgg(),
+  ]);
+
+  const chunks = [];
+  if (live.status === "fulfilled") chunks.push(unwrapOpponentsAgg(live.value));
+  if (physical.status === "fulfilled") chunks.push(unwrapOpponentsAgg(physical.value));
+
+  if (chunks.length) {
+    return chunks.flat();
+  }
+
+  const reasons = [live.status === "rejected" ? live.reason : null, physical.status === "rejected" ? physical.reason : null];
+  const err = reasons.find(Boolean) || new Error("opponents_agg_failed");
+  throw err;
+};
 
 export const getOpponentLogs = async (opponent, { limit=5, offset=0 } = {}) => {
   // Primário: servidor filtra
