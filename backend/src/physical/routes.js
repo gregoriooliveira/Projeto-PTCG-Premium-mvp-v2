@@ -878,6 +878,32 @@ function normalizePokemonList(list) {
   return out;
 }
 
+const PLAYER_POKEMON_SIDES = new Set(["you", "player", "user", "me", "self"]);
+
+function extractEventUserPokemonHints(ev = {}) {
+  const sources = [];
+  if (Array.isArray(ev?.userPokemons)) {
+    sources.push({ list: ev.userPokemons, filterBySide: false });
+  }
+  if (Array.isArray(ev?.pokemons)) {
+    sources.push({ list: ev.pokemons, filterBySide: true });
+  }
+  for (const { list, filterBySide } of sources) {
+    if (!Array.isArray(list) || !list.length) continue;
+    const filtered = filterBySide
+      ? list.filter((entry) => {
+          if (!entry || typeof entry !== "object") return true;
+          const side = typeof entry.side === "string" ? entry.side.trim().toLowerCase() : "";
+          if (!side) return true;
+          return PLAYER_POKEMON_SIDES.has(side);
+        })
+      : list;
+    const normalized = normalizePokemonList(filtered);
+    if (normalized.length) return normalized;
+  }
+  return [];
+}
+
 function combinePokemonHintsList(player = [], opponent = []) {
   const merged = [];
   for (const value of normalizePokemonList(player)) {
@@ -958,6 +984,15 @@ function finalizeRow(baseRow, overrides = {}, { playerPokemons = [], opponentPok
     ? [...baseRow.playerPokemons]
     : [];
   merged.playerPokemons = playerList;
+  if (playerList.length) {
+    merged.userPokemons = [...playerList];
+  } else if (Array.isArray(merged.userPokemons)) {
+    merged.userPokemons = [...merged.userPokemons];
+  } else if (Array.isArray(baseRow.userPokemons)) {
+    merged.userPokemons = [...baseRow.userPokemons];
+  } else {
+    merged.userPokemons = [];
+  }
   const opponentList =
     overrides.opponentPokemons !== undefined
       ? normalizePokemonList(overrides.opponentPokemons)
@@ -1155,9 +1190,14 @@ async function buildEventRows(ev, docId, { normalizedTarget = null, rawTarget = 
     ev?.physicalEvent ||
     ev?.name ||
     null;
-  const playerPokemons = normalizePokemonList(ev?.pokemons || ev?.userPokemons || []);
+  const eventUserPokemonHints = extractEventUserPokemonHints(ev);
+  const fallbackPlayerPokemons = normalizePokemonList(ev?.pokemons || ev?.userPokemons || []);
+  const playerPokemons = eventUserPokemonHints.length
+    ? eventUserPokemonHints
+    : fallbackPlayerPokemons;
   const opponentPokemons = normalizePokemonList(ev?.opponentPokemons || []);
   const countsValue = eventCounts(ev);
+  const userPokemons = playerPokemons.length ? [...playerPokemons] : [];
   const baseRow = {
     id: eventId || docId || null,
     eventId: eventId || docId || null,
@@ -1177,6 +1217,7 @@ async function buildEventRows(ev, docId, { normalizedTarget = null, rawTarget = 
     playerPokemons,
     opponentPokemons,
     pokemons: combinePokemonHintsList(playerPokemons, opponentPokemons),
+    userPokemons,
     score: ev?.score || ev?.placar || null,
     result: normalizeResultToken(ev?.result || ev?.outcome) || null,
     placement: ev?.placement || null,

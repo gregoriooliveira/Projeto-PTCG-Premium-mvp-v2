@@ -470,6 +470,8 @@ describe("physical routes GET /logs", () => {
       result: "W",
       source: "physical",
     });
+    expect(row.userPokemons).toEqual(["pikachu"]);
+    expect(row.opponentPokemons).toEqual(["machamp"]);
     expect(row.pokemons).toEqual(expect.arrayContaining(["pikachu", "machamp"]));
     expect(row.event ?? row.eventName).toBe("League Challenge");
   });
@@ -511,6 +513,8 @@ describe("physical routes GET /logs", () => {
       result: "L",
       source: "physical",
     });
+    expect(row.userPokemons).toEqual(["charizard"]);
+    expect(row.opponentPokemons).toEqual(["ekans"]);
     expect(row.pokemons).toEqual(expect.arrayContaining(["charizard", "ekans"]));
   });
 
