@@ -21,20 +21,20 @@ export default function ResumoGeralWidget({ title, variant, winRate, center, top
   const isDatasLive = variant === "datasLive";
 
   const TopDeckContent = (
-    <div className="flex items-center justify-end gap-3">
-      <div className="flex -space-x-3">
-        {(topDeck?.avatars || []).slice(0, 2).map((src, i) => (
-          <img
-            key={i}
-            src={src}
-            alt="avatar"
-            className="h-10 w-10 rounded-full ring-2 ring-zinc-900 object-cover"
-          />
-        ))}
-      </div>
+    <div className="flex justify-end">
       <div className="text-right">
-        <div className={`text-sm font-medium leading-tight ${isDatasLive ? 'whitespace-normal break-words max-w-none' : 'truncate '} ${isFisico ? '' : ''}` }>
-        <DeckLabel deckName={topDeck?.deckName} pokemonHints={topDeck?.pokemons} stacked />
+        <div
+          className={`text-sm font-medium leading-tight ${
+            isDatasLive ? "whitespace-normal break-words max-w-none" : "truncate"
+          }`}
+        >
+          <DeckLabel
+            deckName={topDeck?.deckName}
+            pokemonHints={topDeck?.pokemons}
+            stacked
+            showIcons={false}
+            className="items-end text-right"
+          />
         </div>
         <div className="text-xs text-zinc-400">
           Top Deck • <span className="text-zinc-200 font-medium">{(topDeck?.winRate ?? 0).toFixed(1)}% WR</span>
