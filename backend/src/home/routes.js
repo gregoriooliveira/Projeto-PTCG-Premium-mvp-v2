@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db } from "../firestore.js";
-import { wrPercent } from "../utils/wr.js";
+import { wrPercent, countsOfResult } from "../utils/wr.js";
 
 const r = Router();
 
@@ -8,6 +8,46 @@ function sumCounts(a={W:0,L:0,T:0}, b={W:0,L:0,T:0}){
   return { W:(a.W||0)+(b.W||0), L:(a.L||0)+(b.L||0), T:(a.T||0)+(b.T||0) };
 }
 function total(c){ return (c.W||0)+(c.L||0)+(c.T||0); }
+
+function normalizeCounts(source){
+  if (!source || typeof source !== "object") return null;
+  const out = { W: 0, L: 0, T: 0 };
+  let hasValue = false;
+  for (const key of ["W","L","T"]) {
+    if (source[key] == null) continue;
+    const n = Number(source[key]);
+    if (Number.isFinite(n)) {
+      out[key] = n;
+      hasValue = true;
+    }
+  }
+  return hasValue ? out : null;
+}
+
+function countsFromResultsList(list){
+  if (!Array.isArray(list)) return null;
+  const acc = { W: 0, L: 0, T: 0 };
+  let hasValue = false;
+  for (const item of list) {
+    if (typeof item !== "string") continue;
+    const token = item.trim().toUpperCase();
+    if (!token) continue;
+    if (token === "W") { acc.W += 1; hasValue = true; }
+    else if (token === "L") { acc.L += 1; hasValue = true; }
+    else if (token === "T") { acc.T += 1; hasValue = true; }
+  }
+  return hasValue ? acc : null;
+}
+
+function eventCounts(ev = {}){
+  return (
+    normalizeCounts(ev.counts) ||
+    normalizeCounts(ev.stats?.counts) ||
+    normalizeCounts(ev.stats) ||
+    countsFromResultsList(ev.results) ||
+    countsOfResult(ev.result)
+  );
+}
 
 async function sourceSummary(prefix, limitDays){
   // events
@@ -21,6 +61,7 @@ async function sourceSummary(prefix, limitDays){
     result: ev.result,
     playerDeck: ev.deckName,
     opponentDeck: ev.opponentDeck,
+    counts: eventCounts(ev),
     name: prefix === "live"
       ? ((ev.you && ev.opponent)
           ? `${ev.you} vs ${ev.opponent}`
