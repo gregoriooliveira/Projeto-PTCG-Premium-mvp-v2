@@ -135,7 +135,7 @@ r.post("/events", authMiddleware, async (req, res) => {
     name, type, storeOrCity, format, classification
   };
   await db.collection("physicalEvents").doc(eventId).set(doc, { merge: true });
-  await recomputeAllForEvent(doc);
+  await recomputeAllForEvent(null, doc);
   res.status(201).json({ eventId });
 });
 
@@ -168,6 +168,7 @@ r.patch("/events/:id", authMiddleware, async (req, res) => {
   const ds = await docRef.get();
   if (!ds.exists) return res.status(404).json({ error:"not_found" });
   const current = ds.data() || {};
+  if (!current.eventId) current.eventId = id;
 
   const update = {};
   if ("deckName" in req.body) { update.deckName = normalizeName(req.body.deckName); update.playerDeckKey = normalizeDeckKey(update.deckName); }
@@ -191,7 +192,7 @@ r.patch("/events/:id", authMiddleware, async (req, res) => {
   await docRef.set(update, { merge: true });
   const updatedDoc = { ...current, ...update };
   if (!updatedDoc.eventId) updatedDoc.eventId = id;
-  await recomputeAllForEvent(updatedDoc);
+  await recomputeAllForEvent(current, updatedDoc);
 
   res.json(updatedDoc);
 });
@@ -203,6 +204,7 @@ r.delete("/events/:id", authMiddleware, async (req, res) => {
   const ds = await docRef.get();
   if (!ds.exists) return res.status(404).json({ error:"not_found" });
   const d = ds.data();
+  if (!d.eventId) d.eventId = id;
   const roundDeletionPromises = [];
   if (typeof docRef.collection === "function") {
     const roundsCol = docRef.collection("rounds");
@@ -239,7 +241,7 @@ r.delete("/events/:id", authMiddleware, async (req, res) => {
     }
   }
   await docRef.delete();
-  await recomputeAllForEvent(d);
+  await recomputeAllForEvent(d, null);
   res.json({ ok:true });
 });
 
@@ -256,42 +258,201 @@ function computeRoundResult(round = {}) {
   return "T";
 }
 
+function extractOpponentName(value) {
+  return normalizeName(typeof value === "string" ? value : "");
+}
+
+function extractPokemonSlugs(round = {}) {
+  const out = [];
+  const push = (value) => {
+    if (!value) return;
+    let slug = null;
+    if (typeof value === "string") {
+      slug = value;
+    } else if (value && typeof value === "object") {
+      if (typeof value.slug === "string") slug = value.slug;
+      else if (typeof value.name === "string") slug = value.name;
+      else if (typeof value.id === "string") slug = value.id;
+    }
+    if (!slug) return;
+    const trimmed = slug.trim().toLowerCase();
+    if (!trimmed) return;
+    if (!out.includes(trimmed)) out.push(trimmed);
+  };
+  push(round.oppMonASlug);
+  push(round.oppMonA);
+  push(round.oppMonBSlug);
+  push(round.oppMonB);
+  return out.slice(0, 2);
+}
+
+function deckIdentifier({ deckKey = "", deckName = "", pokemons = [] }) {
+  if (deckKey) return `key:${deckKey}`;
+  const trimmedName = typeof deckName === "string" ? deckName.trim().toLowerCase() : "";
+  if (trimmedName) return `name:${trimmedName}`;
+  if (Array.isArray(pokemons) && pokemons.length) {
+    return `pkm:${pokemons.join("+")}`;
+  }
+  return "unknown";
+}
+
+function mergePokemonHints(target = [], source = []) {
+  if (!Array.isArray(target)) target = [];
+  const set = new Set(target.map((s) => (typeof s === "string" ? s : "")));
+  for (const raw of Array.isArray(source) ? source : []) {
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim().toLowerCase();
+    if (!trimmed) continue;
+    set.add(trimmed);
+    if (set.size >= 2) break;
+  }
+  return Array.from(set).slice(0, 2);
+}
+
 async function recomputeRoundsAgg(eventId) {
-  const col = db.collection("physicalEvents").doc(eventId).collection("rounds");
+  const eventRef = db.collection("physicalEvents").doc(eventId);
+  let prevData = {};
+  try {
+    const prevSnap = await eventRef.get();
+    if (prevSnap.exists) {
+      prevData = { ...prevSnap.data() };
+    }
+  } catch {}
+
+  const col = eventRef.collection("rounds");
   const snap = await col.get();
   let counts = { W: 0, L: 0, T: 0 };
-  const byOpp = new Map();
-  const byDeck = new Map();
-  snap.forEach(d => {
+  const perOpponent = new Map();
+  const perDeck = new Map();
+
+  snap.forEach((d) => {
     const r = d.data() || {};
     const c = countsOfResult(r.result);
     counts = countsAdd(counts, c);
-    const opp = normalizeName(r.opponentName || "");
-    if (opp) {
-      const cur = byOpp.get(opp) || { W: 0, L: 0, T: 0 };
-      byOpp.set(opp, countsAdd(cur, c));
+
+    const opponentName = extractOpponentName(r.opponentName || r.opponent);
+    if (opponentName) {
+      let oppEntry = perOpponent.get(opponentName);
+      if (!oppEntry) {
+        oppEntry = {
+          counts: { W: 0, L: 0, T: 0 },
+          decks: new Map(),
+        };
+        perOpponent.set(opponentName, oppEntry);
+      }
+      oppEntry.counts = countsAdd(oppEntry.counts, c);
+
+      const deckKey = r.normOppDeckKey || normalizeDeckKey(r.opponentDeckName || "");
+      const deckName = typeof r.opponentDeckName === "string" ? r.opponentDeckName.trim() : "";
+      const pokemons = extractPokemonSlugs(r);
+      const deckInfo = { deckKey: deckKey || "", deckName, pokemons };
+      const deckId = deckIdentifier(deckInfo);
+      let deckEntry = oppEntry.decks.get(deckId);
+      if (!deckEntry) {
+        deckEntry = {
+          deckKey: deckKey || "",
+          deckName: deckName || "",
+          pokemons: Array.isArray(pokemons) ? [...pokemons] : [],
+          counts: { W: 0, L: 0, T: 0 },
+          total: 0,
+        };
+        oppEntry.decks.set(deckId, deckEntry);
+      }
+      deckEntry.counts = countsAdd(deckEntry.counts, c);
+      deckEntry.total += (c.W || 0) + (c.L || 0) + (c.T || 0);
+      if (deckKey && !deckEntry.deckKey) deckEntry.deckKey = deckKey;
+      if (deckName && !deckEntry.deckName) deckEntry.deckName = deckName;
+      deckEntry.pokemons = mergePokemonHints(deckEntry.pokemons, pokemons);
     }
+
     const deckKey = r.normOppDeckKey || normalizeDeckKey(r.opponentDeckName || "");
     if (deckKey) {
-      const cur = byDeck.get(deckKey) || { W: 0, L: 0, T: 0 };
-      byDeck.set(deckKey, countsAdd(cur, c));
+      const cur = perDeck.get(deckKey) || { W: 0, L: 0, T: 0 };
+      perDeck.set(deckKey, countsAdd(cur, c));
     }
   });
+
   const wr = wrPercent(counts);
+
   const opponentsAgg = [];
-  for (const [opponent, c] of byOpp.entries()) {
-    opponentsAgg.push({ opponent, counts: c, wr: wrPercent(c) });
+  const opponentsList = [];
+  for (const [opponentName, data] of perOpponent.entries()) {
+    const entryCounts = {
+      W: data.counts.W || 0,
+      L: data.counts.L || 0,
+      T: data.counts.T || 0,
+    };
+    const total = entryCounts.W + entryCounts.L + entryCounts.T;
+    const decks = [];
+    let topDeck = null;
+    for (const deckEntry of data.decks.values()) {
+      const deckCounts = {
+        W: deckEntry.counts.W || 0,
+        L: deckEntry.counts.L || 0,
+        T: deckEntry.counts.T || 0,
+      };
+      const deckTotal = deckEntry.total || (deckCounts.W + deckCounts.L + deckCounts.T);
+      const payload = {
+        deckKey: deckEntry.deckKey || "",
+        deckName: deckEntry.deckName || "",
+        counts: deckCounts,
+        total: deckTotal,
+        pokemons: Array.isArray(deckEntry.pokemons) ? [...deckEntry.pokemons] : [],
+      };
+      decks.push(payload);
+      if (!topDeck) {
+        topDeck = payload;
+      } else {
+        const currentTotal = topDeck.total || 0;
+        if (deckTotal > currentTotal) {
+          topDeck = payload;
+        } else if (deckTotal === currentTotal) {
+          const hasKey = !!payload.deckKey;
+          const topHasKey = !!topDeck.deckKey;
+          if (hasKey && !topHasKey) topDeck = payload;
+        }
+      }
+    }
+
+    opponentsAgg.push({
+      opponentName,
+      counts: entryCounts,
+      wr: wrPercent(entryCounts),
+      total,
+      decks,
+      topDeckKey: topDeck?.deckKey || null,
+      topDeckName: topDeck?.deckName || null,
+      topPokemons: Array.isArray(topDeck?.pokemons) ? [...topDeck.pokemons] : [],
+    });
+    opponentsList.push(opponentName);
   }
+
   const decksAgg = [];
-  for (const [deckKey, c] of byDeck.entries()) {
+  for (const [deckKey, c] of perDeck.entries()) {
     decksAgg.push({ deckKey, counts: c, wr: wrPercent(c) });
   }
-  await db.collection("physicalEvents").doc(eventId).set({
-    stats: { counts, wr },
+
+  const countsCopy = { W: counts.W || 0, L: counts.L || 0, T: counts.T || 0 };
+  const nextData = {
+    ...(prevData || {}),
+    stats: { counts: countsCopy, wr },
     opponentsAgg,
+    opponentsList,
+    decksAgg,
+    roundsCount: snap.size,
+  };
+
+  await eventRef.set({
+    stats: { counts: countsCopy, wr },
+    opponentsAgg,
+    opponentsList,
     decksAgg,
     roundsCount: snap.size,
   }, { merge: true });
+
+  const prevEvent = prevData ? { eventId, ...prevData } : { eventId };
+  const nextEvent = { eventId, ...nextData };
+  return { prevEvent, nextEvent };
 }
 
 r.get("/events/:eventId/rounds", async (req, res) => {
@@ -339,7 +500,8 @@ r.post("/events/:eventId/rounds", authMiddleware, async (req, res) => {
     roundDoc.result = computeRoundResult(roundDoc);
     await db.collection("physicalEvents").doc(eventId)
       .collection("rounds").doc(roundId).set(roundDoc);
-    await recomputeRoundsAgg(eventId);
+    const agg = await recomputeRoundsAgg(eventId);
+    await recomputeAllForEvent(agg?.prevEvent, agg?.nextEvent);
     return res.status(201).json({ roundId, ...roundDoc });
   } catch (e) {
     console.error("[POST /physical/events/:eventId/rounds]", e);

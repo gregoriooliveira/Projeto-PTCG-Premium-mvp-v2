@@ -1,4 +1,5 @@
 import { db } from "../firestore.js";
+import { normalizeName } from "../utils/normalize.js";
 import { countsAdd, countsOfResult, wrPercent } from "../utils/wr.js";
 
 /** Garante ID seguro para usar em doc() */
@@ -97,26 +98,194 @@ export async function recomputeAllDeckAggregates() {
 }
 
 /** Recalcula o agregado por oponente */
+function normalizeOpponentName(value) {
+  return normalizeName(typeof value === "string" ? value : "");
+}
+
+function mergePokemonHints(target = [], source = []) {
+  const list = Array.isArray(target) ? [...target] : [];
+  const set = new Set(list.map((v) => (typeof v === "string" ? v : "")));
+  for (const raw of Array.isArray(source) ? source : []) {
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim().toLowerCase();
+    if (!trimmed) continue;
+    if (!set.has(trimmed)) {
+      set.add(trimmed);
+      list.push(trimmed);
+    }
+    if (list.length >= 2) break;
+  }
+  return list.slice(0, 2);
+}
+
 export async function recomputeOpponent(opponentName) {
-  if (!opponentName) return;
-  const snap = await db.collection("physicalEvents").where("opponent", "==", opponentName).get();
-  const docId = safeDocId(opponentName);
+  const normalized = normalizeOpponentName(opponentName);
+  if (!normalized) return;
+  const docId = safeDocId(normalized);
+  const snap = await db
+    .collection("physicalEvents")
+    .where("opponentsList", "array-contains", normalized)
+    .get();
+
   if (snap.empty) {
     try { await db.collection("physicalOpponentsAgg").doc(docId).delete(); } catch {}
     return;
   }
+
   let counts = { W: 0, L: 0, T: 0 };
-  let games = 0;
-  snap.forEach(d => {
-    const ev = d.data();
-    counts = countsAdd(counts, countsOfResult(ev.result));
-    games += 1;
+  const deckMap = new Map();
+  let fallbackDeckName = "";
+  let fallbackPokemons = [];
+
+  snap.forEach((doc) => {
+    const ev = doc.data() || {};
+    const entries = Array.isArray(ev.opponentsAgg) ? ev.opponentsAgg : [];
+    const entry = entries.find((item) => normalizeOpponentName(item?.opponentName || item?.opponent) === normalized);
+    if (!entry) return;
+
+    const entryCounts = entry?.counts && typeof entry.counts === "object"
+      ? { W: Number(entry.counts.W) || 0, L: Number(entry.counts.L) || 0, T: Number(entry.counts.T) || 0 }
+      : { W: 0, L: 0, T: 0 };
+    counts = countsAdd(counts, entryCounts);
+
+    const decks = Array.isArray(entry.decks) ? entry.decks : [];
+    const mergeDeck = (deckData = {}, deckCounts = { W: 0, L: 0, T: 0 }, deckTotal = 0) => {
+      const key = typeof deckData.deckKey === "string" && deckData.deckKey
+        ? `key:${deckData.deckKey}`
+        : (typeof deckData.deckName === "string" && deckData.deckName.trim())
+          ? `name:${deckData.deckName.trim().toLowerCase()}`
+          : Array.isArray(deckData.pokemons) && deckData.pokemons.length
+            ? `pkm:${deckData.pokemons.join("+")}`
+            : "unknown";
+
+      const current = deckMap.get(key) || {
+        deckKey: typeof deckData.deckKey === "string" ? deckData.deckKey : "",
+        deckName: typeof deckData.deckName === "string" ? deckData.deckName : "",
+        pokemons: [],
+        counts: { W: 0, L: 0, T: 0 },
+        total: 0,
+      };
+
+      current.counts = countsAdd(current.counts, deckCounts);
+      current.total += deckTotal;
+      if (deckData.deckKey && !current.deckKey) current.deckKey = deckData.deckKey;
+      if (deckData.deckName && !current.deckName) current.deckName = deckData.deckName;
+      current.pokemons = mergePokemonHints(current.pokemons, deckData.pokemons || []);
+
+      deckMap.set(key, current);
+    };
+
+    if (decks.length) {
+      decks.forEach((deck) => {
+        const deckCounts = deck?.counts && typeof deck.counts === "object"
+          ? { W: Number(deck.counts.W) || 0, L: Number(deck.counts.L) || 0, T: Number(deck.counts.T) || 0 }
+          : { W: 0, L: 0, T: 0 };
+        const deckTotal = typeof deck?.total === "number"
+          ? deck.total
+          : deckCounts.W + deckCounts.L + deckCounts.T;
+        mergeDeck(
+          {
+            deckKey: typeof deck?.deckKey === "string" ? deck.deckKey : "",
+            deckName: typeof deck?.deckName === "string" ? deck.deckName : "",
+            pokemons: Array.isArray(deck?.pokemons) ? deck.pokemons : [],
+          },
+          deckCounts,
+          deckTotal
+        );
+      });
+    } else {
+      mergeDeck(
+        {
+          deckKey: typeof entry?.topDeckKey === "string" ? entry.topDeckKey : "",
+          deckName: typeof entry?.topDeckName === "string" ? entry.topDeckName : "",
+          pokemons: Array.isArray(entry?.topPokemons) ? entry.topPokemons : [],
+        },
+        entryCounts,
+        entryCounts.W + entryCounts.L + entryCounts.T
+      );
+    }
+
+    if (typeof entry?.topDeckName === "string" && !fallbackDeckName) {
+      fallbackDeckName = entry.topDeckName;
+    }
+    if (Array.isArray(entry?.topPokemons) && fallbackPokemons.length === 0) {
+      fallbackPokemons = entry.topPokemons.slice(0, 2);
+    }
   });
-  const wr = wrPercent(counts);
+
+  const totalCounts = {
+    W: counts.W || 0,
+    L: counts.L || 0,
+    T: counts.T || 0,
+  };
+  const total = totalCounts.W + totalCounts.L + totalCounts.T;
+  if (!total) {
+    try { await db.collection("physicalOpponentsAgg").doc(docId).delete(); } catch {}
+    return;
+  }
+  const wr = wrPercent(totalCounts);
+
+  let topDeck = null;
+  for (const deck of deckMap.values()) {
+    const deckTotal = typeof deck.total === "number"
+      ? deck.total
+      : (deck.counts.W || 0) + (deck.counts.L || 0) + (deck.counts.T || 0);
+    if (!topDeck) {
+      topDeck = deck;
+      continue;
+    }
+    const currentTotal = typeof topDeck.total === "number"
+      ? topDeck.total
+      : (topDeck.counts.W || 0) + (topDeck.counts.L || 0) + (topDeck.counts.T || 0);
+    if (deckTotal > currentTotal) {
+      topDeck = deck;
+    } else if (deckTotal === currentTotal) {
+      const candidateHasKey = !!deck.deckKey;
+      const currentHasKey = !!topDeck.deckKey;
+      if (candidateHasKey && !currentHasKey) topDeck = deck;
+    }
+  }
+
+  const topDeckKey = topDeck?.deckKey || "";
+  const topDeckName = topDeck?.deckName || fallbackDeckName || "";
+  const topPokemons = mergePokemonHints(topDeck?.pokemons || [], fallbackPokemons);
+
   await db.collection("physicalOpponentsAgg").doc(docId).set(
-    { opponent: opponentName, games, counts, wr },
+    {
+      opponent: normalized,
+      opponentName: normalized,
+      counts: totalCounts,
+      total,
+      wr,
+      games: total,
+      topDeckKey: topDeckKey || null,
+      topDeckName: topDeckName || null,
+      topPokemons,
+    },
     { merge: true }
   );
+}
+
+function extractOpponentNames(ev) {
+  const names = new Set();
+  if (!ev || typeof ev !== "object") return [];
+
+  const direct = normalizeOpponentName(ev.opponent);
+  if (direct) names.add(direct);
+
+  const list = Array.isArray(ev.opponentsList) ? ev.opponentsList : [];
+  for (const raw of list) {
+    const norm = normalizeOpponentName(raw);
+    if (norm) names.add(norm);
+  }
+
+  const agg = Array.isArray(ev.opponentsAgg) ? ev.opponentsAgg : [];
+  for (const item of agg) {
+    const norm = normalizeOpponentName(item?.opponentName || item?.opponent);
+    if (norm) names.add(norm);
+  }
+
+  return Array.from(names);
 }
 
 /** Recalcula agregados de torneio */
@@ -164,13 +333,32 @@ export async function recomputeTournament(tournamentId) {
 }
 
 /** Recalcula todos os agregados afetados por um evento (para limpar/atualizar widgets). */
-export async function recomputeAllForEvent(ev) {
+export async function recomputeAllForEvent(prevEv, nextEv) {
+  const prev = arguments.length > 1 ? (prevEv || null) : null;
+  const next = arguments.length > 1 ? (nextEv || null) : (prevEv || null);
+
+  const dates = new Set();
+  if (prev?.date) dates.add(prev.date);
+  if (next?.date) dates.add(next.date);
+
+  const deckKeys = new Set();
+  if (prev?.playerDeckKey) deckKeys.add(prev.playerDeckKey);
+  if (next?.playerDeckKey) deckKeys.add(next.playerDeckKey);
+
+  const tournaments = new Set();
+  if (prev?.tournamentId) tournaments.add(prev.tournamentId);
+  if (next?.tournamentId) tournaments.add(next.tournamentId);
+
+  const opponents = new Set();
+  extractOpponentNames(prev).forEach((name) => opponents.add(name));
+  extractOpponentNames(next).forEach((name) => opponents.add(name));
+
   try {
     await Promise.all([
-      recomputeDay(ev?.date),
-      recomputeDeck(ev?.playerDeckKey),
-      recomputeOpponent(ev?.opponent),
-      recomputeTournament(ev?.tournamentId),
+      ...Array.from(dates).map((date) => recomputeDay(date)),
+      ...Array.from(deckKeys).map((deck) => recomputeDeck(deck)),
+      ...Array.from(tournaments).map((t) => recomputeTournament(t)),
+      ...Array.from(opponents).map((name) => recomputeOpponent(name)),
     ]);
   } catch (e) {
     console.error("[recomputeAllForEvent] failed", e);
