@@ -56,7 +56,12 @@ const TopBarWidget = ({ home }) => {
         variant="home"
         winRate={{ value: wr, label: "WIN RATE GERAL (LIVE + FÍSICO)" }}
         center={{ kda: { v: counts.W, d: counts.L, e: counts.T }, total: counts.total, subtitle: "Total de Partidas" }}
-        topDeck={{ deckName: prettyDeckKey(top?.deckKey || "") || "—", winRate: top?.wr || 0, avatars: top?.avatars || [] }}
+        topDeck={{
+          deckName: prettyDeckKey(top?.deckKey || "") || "—",
+          winRate: top?.wr || 0,
+          avatars: top?.avatars || [],
+          pokemons: top?.pokemons || [],
+        }}
       />
     </div>
   );

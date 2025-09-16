@@ -129,14 +129,22 @@ function mergeHome(a, b, limitDays){
 
   // topDecks (merge by deckKey and recompute wr)
   const dm = new Map();
-  for (const x of a.topDecks) dm.set(x.deckKey, { deckKey:x.deckKey, counts:{...x.counts}, avatars: x.avatars||[] });
+  for (const x of a.topDecks) {
+    dm.set(x.deckKey, {
+      deckKey: x.deckKey,
+      counts: { ...x.counts },
+      avatars: x.avatars || [],
+      pokemons: x.pokemons || [],
+    });
+  }
   for (const x of b.topDecks) {
-    const prev = dm.get(x.deckKey) || { deckKey:x.deckKey, counts:{W:0,L:0,T:0}, avatars:[] };
+    const prev = dm.get(x.deckKey) || { deckKey:x.deckKey, counts:{W:0,L:0,T:0}, avatars:[], pokemons:[] };
     prev.counts = sumCounts(prev.counts, x.counts);
     if ((prev.avatars||[]).length===0 && (x.avatars||[]).length) prev.avatars = x.avatars;
+    if ((!Array.isArray(prev.pokemons) || prev.pokemons.length===0) && (x.pokemons||[]).length) prev.pokemons = x.pokemons;
     dm.set(x.deckKey, prev);
   }
-  const topDecks = Array.from(dm.values()).map(d => ({ deckKey:d.deckKey, counts:d.counts, wr: wrPercent(d.counts), avatars:d.avatars||[] })).sort((a,b)=>b.wr-a.wr).slice(0,5);
+  const topDecks = Array.from(dm.values()).map(d => ({ deckKey:d.deckKey, counts:d.counts, wr: wrPercent(d.counts), avatars:d.avatars||[], pokemons:d.pokemons||[] })).sort((a,b)=>b.wr-a.wr).slice(0,5);
 
   // topOpponents (merge by opponentName)
   const om = new Map();
@@ -159,7 +167,7 @@ function mergeHome(a, b, limitDays){
     ...b.recentLogs.map(log => ({ ...log }))
   ].sort((x,y)=> String(y.dateISO).localeCompare(String(x.dateISO))).slice(0,10);
 
-  const topDeck = topDecks[0] ? { deckKey: topDecks[0].deckKey, wr: topDecks[0].wr, avatars: topDecks[0].avatars } : null;
+  const topDeck = topDecks[0] ? { deckKey: topDecks[0].deckKey, wr: topDecks[0].wr, avatars: topDecks[0].avatars, pokemons: topDecks[0].pokemons } : null;
   return { summary:{ counts, wr, topDeck }, lastDays, topDecks, topOpponents, recentTournaments, recentLogs };
 }
 
