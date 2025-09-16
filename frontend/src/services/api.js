@@ -91,21 +91,151 @@ export const getOpponentsAgg = async () => {
 };
 
 export const getOpponentLogs = async (opponent, { limit=5, offset=0 } = {}) => {
-  // Primário: servidor filtra
-  const url = `/api/live/logs?opponent=${encodeURIComponent(opponent||'')}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&source=all`;
-  try {
-    const first = await api(url);
-    if (first && first.ok && Array.isArray(first.rows) && first.rows.length) return first;
-    // Fallback: busca todos e filtra no cliente se servidor não retornou (compatibilidade)
-    const all = await api(`/api/live/logs?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}&source=all`);
-    if (!all || !Array.isArray(all.rows)) return first || all;
-    const keyFields = ['opponent','opponentName','name','opponent_username','opponentUser','opName'];
-    const name = String(opponent||'').trim().toLowerCase();
-    const rows = all.rows.filter(r => keyFields.some(k => String(r?.[k]||'').toLowerCase() === name));
-    return { ...all, rows, total: rows.length, ok: true };
-  } catch (e) {
-    throw e;
+  const opponentName = String(opponent || "").trim();
+  const normalizedOpponent = opponentName.toLowerCase();
+  const keyFields = ['opponent','opponentName','name','opponent_username','opponentUser','opName'];
+
+  const filterRowsByOpponent = (rows = []) => {
+    const arr = Array.isArray(rows) ? rows : [];
+    if (!normalizedOpponent) return arr;
+    return arr.filter((row) =>
+      keyFields.some((key) => String(row?.[key] || '').trim().toLowerCase() === normalizedOpponent)
+    );
+  };
+
+  const markRowsWithSource = (rows = [], source) =>
+    (Array.isArray(rows) ? rows : []).map((row) => ({ ...row, source }));
+
+  const countFilledFields = (row = {}) => {
+    let score = 0;
+    for (const [key, value] of Object.entries(row)) {
+      if (key === 'source') continue;
+      if (value === undefined || value === null) continue;
+      if (typeof value === 'string' && value.trim() === '') continue;
+      score += 1;
+    }
+    return score;
+  };
+
+  const mergeLogEntries = (a = {}, b = {}) => {
+    const scoreA = countFilledFields(a);
+    const scoreB = countFilledFields(b);
+    const [primary, secondary] = scoreB > scoreA ? [b, a] : [a, b];
+    const merged = { ...primary };
+    for (const [key, value] of Object.entries(secondary)) {
+      if (value === undefined || value === null) continue;
+      if (value === '' && value !== 0) continue;
+      const current = merged[key];
+      const isEmptyCurrent = current === undefined || current === null || (current === '' && current !== 0);
+      if (isEmptyCurrent) merged[key] = value;
+    }
+    return merged;
+  };
+
+  const parseTimestamp = (row = {}) => {
+    const candidates = [row.date, row.createdAt, row.ts];
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const parsed = Date.parse(candidate);
+      if (!Number.isNaN(parsed)) return parsed;
+      const numeric = Number(candidate);
+      if (Number.isFinite(numeric)) return numeric;
+    }
+    return 0;
+  };
+
+  const dedupeAndSortLogs = (rows = []) => {
+    const map = new Map();
+    const extras = [];
+
+    for (const row of rows) {
+      if (!row) continue;
+      const id = row.id !== undefined && row.id !== null && row.id !== '' ? String(row.id) : '';
+      const date = row.date !== undefined && row.date !== null && row.date !== '' ? String(row.date) : '';
+      const createdAt = row.createdAt !== undefined && row.createdAt !== null && row.createdAt !== '' ? String(row.createdAt) : '';
+      const key = id ? `id:${id}` : date ? `date:${date}` : createdAt ? `createdAt:${createdAt}` : '';
+      if (!key) {
+        extras.push(row);
+        continue;
+      }
+      if (!map.has(key)) {
+        map.set(key, row);
+        continue;
+      }
+      const existing = map.get(key);
+      map.set(key, mergeLogEntries(existing, row));
+    }
+
+    const combined = [...map.values(), ...extras];
+    combined.sort((a, b) => parseTimestamp(b) - parseTimestamp(a));
+    return combined;
+  };
+
+  const extractRows = (payload) => {
+    if (Array.isArray(payload?.rows)) return payload.rows;
+    if (Array.isArray(payload)) return payload;
+    return [];
+  };
+
+  const wrapPayload = (payload, source) => {
+    const rows = filterRowsByOpponent(extractRows(payload));
+    return {
+      ok: typeof payload?.ok === 'boolean' ? payload.ok : true,
+      total: rows.length,
+      rows: markRowsWithSource(rows, source),
+    };
+  };
+
+  const fetchSourceLogs = async (source) => {
+    const base = source === 'physical' ? '/api/physical/logs' : '/api/live/logs';
+    const queryParams = [
+      `limit=${encodeURIComponent(limit)}`,
+      `offset=${encodeURIComponent(offset)}`,
+    ];
+    if (source === 'live') queryParams.push('source=all');
+
+    const filteredParams = normalizedOpponent
+      ? [`opponent=${encodeURIComponent(opponentName)}`, ...queryParams]
+      : [...queryParams];
+
+    const filteredUrl = `${base}?${filteredParams.join('&')}`;
+    const fallbackUrl = `${base}?${queryParams.join('&')}`;
+
+    const primary = await api(filteredUrl);
+    const primaryWrapped = wrapPayload(primary, source);
+    if (primaryWrapped.rows.length || !normalizedOpponent) return primaryWrapped;
+
+    const fallback = await api(fallbackUrl);
+    return wrapPayload(fallback, source);
+  };
+
+  const [live, physical] = await Promise.allSettled([
+    fetchSourceLogs('live'),
+    fetchSourceLogs('physical'),
+  ]);
+
+  const fulfilled = [];
+  const errors = [];
+
+  if (live.status === 'fulfilled') fulfilled.push(live.value);
+  else if (live.status === 'rejected') errors.push(live.reason);
+
+  if (physical.status === 'fulfilled') fulfilled.push(physical.value);
+  else if (physical.status === 'rejected') errors.push(physical.reason);
+
+  if (!fulfilled.length) {
+    const err = errors.find(Boolean) || new Error('opponent_logs_failed');
+    throw err;
   }
+
+  const combinedRows = dedupeAndSortLogs(fulfilled.flatMap((entry) => entry.rows || []));
+  const anyOk = fulfilled.some((entry) => entry.ok !== false);
+
+  return {
+    ok: anyOk,
+    total: combinedRows.length,
+    rows: combinedRows,
+  };
 };
 
 /* Importing */

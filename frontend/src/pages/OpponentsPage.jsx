@@ -195,8 +195,35 @@ function mapLog(x, opponentName) {
     eventName: x.eventName || x.tournament || x.event || "",
     userPokemons: x.userPokemons || x.myPokemons,
     opponentPokemons: x.opponentPokemons || x.oppPokemons,
+    source: x.source === "physical" ? "physical" : "live",
   };
 }
+
+function parseLogTimestamp(log = {}) {
+  const candidates = [log.date, log.createdAt, log.ts];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const parsed = Date.parse(candidate);
+    if (!Number.isNaN(parsed)) return parsed;
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return 0;
+}
+
+function sortLogsByDate(list = []) {
+  const arr = Array.isArray(list) ? [...list] : [];
+  return arr.sort((a, b) => parseLogTimestamp(b) - parseLogTimestamp(a));
+}
+
+const buildLogHref = (log = {}) => {
+  const id = log?.id ? String(log.id) : "";
+  if (!id) return "#";
+  const encoded = encodeURIComponent(id);
+  return log?.source === "physical"
+    ? `#/tcg-fisico/eventos/${encoded}`
+    : `#/tcg-live/logs/${encoded}`;
+};
 
 // normaliza nome/key para exibição correta
 const displayDeck = (nameOrKey = "") => prettyDeckKey(toDeckKey(nameOrKey));
@@ -306,7 +333,8 @@ export default function OpponentsPage() {
     getOpponentLogs(expanded, { limit: 200, offset: 0 })
       .then((res) => {
         const arr = Array.isArray(res?.rows) ? res.rows : Array.isArray(res) ? res : [];
-        setLogs(arr.map((x) => mapLog(x, expanded)));
+        const sorted = sortLogsByDate(arr);
+        setLogs(sorted.map((x) => mapLog(x, expanded)));
       })
       .catch((e) => setLogsErr(e?.message || "Falha ao carregar logs"))
       .finally(() => setLogsBusy(false));
@@ -423,7 +451,7 @@ export default function OpponentsPage() {
                     {!logsBusy && !logsErr && pageSlice.map((log) => (
                       <a
                         key={log.id}
-                        href={`#/tcg-live/logs/${encodeURIComponent(log.id)}`}
+                        href={buildLogHref(log)}
                         className="grid grid-cols-12 items-center gap-2 py-2 text-sm"
                       >
                         <div className="col-span-2">{log.date}</div>
