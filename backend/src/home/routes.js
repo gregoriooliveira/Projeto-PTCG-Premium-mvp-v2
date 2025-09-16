@@ -17,7 +17,8 @@ async function sourceSummary(prefix, limitDays){
   for (const e of events) counts = sumCounts(counts, {W: e.result==='W'?1:0, L: e.result==='L'?1:0, T: e.result==='T'?1:0});
   const recentLogs = events.slice(0,10).map(ev => ({
     eventId: ev.eventId, dateISO: ev.date, result: ev.result,
-    playerDeck: ev.deckName, opponentDeck: ev.opponentDeck
+    playerDeck: ev.deckName, opponentDeck: ev.opponentDeck,
+    source: prefix
   }));
   // days
   const daysSnap = await db.collection(`${prefix}Days`).orderBy("date","desc").limit(limitDays).get();
@@ -103,7 +104,10 @@ function mergeHome(a, b, limitDays){
   const recentTournaments = [...a.recentTournaments, ...b.recentTournaments].sort((x,y)=> String(y.dateISO).localeCompare(String(x.dateISO))).slice(0,5);
 
   // recentLogs (merge and slice)
-  const recentLogs = [...a.recentLogs, ...b.recentLogs].sort((x,y)=> String(y.dateISO).localeCompare(String(x.dateISO))).slice(0,10);
+  const recentLogs = [
+    ...a.recentLogs.map(log => ({ ...log })),
+    ...b.recentLogs.map(log => ({ ...log }))
+  ].sort((x,y)=> String(y.dateISO).localeCompare(String(x.dateISO))).slice(0,10);
 
   const topDeck = topDecks[0] ? { deckKey: topDecks[0].deckKey, wr: topDecks[0].wr, avatars: topDecks[0].avatars } : null;
   return { summary:{ counts, wr, topDeck }, lastDays, topDecks, topOpponents, recentTournaments, recentLogs };
