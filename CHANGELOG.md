@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Backend
+- Recompute physical aggregates from round data (`backend/src/physical/aggregates.js`).
+- Add `counts` field to the `recentLogs` response of `/api/home` (`backend/src/home/routes.js`).
 - Parse debounce via frontend; backend parser improved for English short logs.
 - Suggestor filters out non-Pokémon terms.
 - `GET /api/live/events/:id` now includes `rawLog`.
