@@ -64,22 +64,42 @@ const TopBarWidget = ({ home }) => {
 
 const Last5DaysWidget = ({ home }) => {
   const days = Array.isArray(home?.lastDays) ? home.lastDays : [];
+  const validDays = days.filter((d) => {
+    if (!d || typeof d !== "object") return false;
+    const event = d.event;
+    if (!event || typeof event !== "object") return false;
+    const hasName = typeof event.name === "string" && event.name.trim().length > 0;
+    const hasUrl = typeof event.url === "string" && event.url.trim().length > 0;
+    return hasName && hasUrl;
+  });
+
   return (
-    <WidgetCard title="Últimos 5 dias (Todos)" icon={CalendarDays} className="col-span-12 md:col-span-6">
+    <WidgetCard title="Ultimos Registros" icon={CalendarDays} className="col-span-12 md:col-span-6">
       {/* Cabeçalho inserido */}
-      <div className="grid grid-cols-12 font-mono text-xs text-zinc-400 mb-2">
-        <div className="col-span-4">Data</div>
-        <div className="col-span-4 text-center">Resultado</div>
-        <div className="col-span-4 text-right">WinRate</div>
+      <div className="grid grid-cols-4 font-mono text-xs text-zinc-400 mb-2">
+        <div>Data</div>
+        <div>Evento</div>
+        <div className="text-center">Resultado</div>
+        <div className="text-right">WinRate</div>
       </div>
 
       <div className="space-y-2">
-        {days.length === 0 && <div className="text-sm text-zinc-400">Sem partidas ainda.</div>}
-        {days.map((d) => (
-          <div key={d.date} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
-            <div className="col-span-4 text-sm text-zinc-200"><span>{d.date}</span></div>
-            <div className="col-span-4 flex justify-center"><WLTriplet {...d.counts} /></div>
-            <div className="col-span-4 flex justify-end"><Pill>WR {d.wr}</Pill></div>
+        {validDays.length === 0 && <div className="text-sm text-zinc-400">Sem partidas ainda.</div>}
+        {validDays.map((d) => (
+          <div
+            key={d.date || d.event.name}
+            className="grid grid-cols-4 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0"
+          >
+            <div className="text-sm text-zinc-200"><span>{d.date || "—"}</span></div>
+            <div className="text-sm text-zinc-200 truncate">
+              <a href={d.event.url} className="hover:underline underline-offset-2">
+                {d.event.name}
+              </a>
+            </div>
+            <div className="flex justify-center">
+              <WLTriplet {...(d.counts || { W: 0, L: 0, T: 0 })} />
+            </div>
+            <div className="flex justify-end"><Pill>WR {d.wr}</Pill></div>
           </div>
         ))}
       </div>
