@@ -22,7 +22,39 @@ async function sourceSummary(prefix, limitDays){
   }));
   // days
   const daysSnap = await db.collection(`${prefix}Days`).orderBy("date","desc").limit(limitDays).get();
-  const lastDays = daysSnap.docs.map(d=>d.data());
+  const eventUrlPrefix = prefix === "live" ? "#/tcg-live/logs" : "#/tcg-fisico/eventos";
+  const lastDays = await Promise.all(daysSnap.docs.map(async (doc) => {
+    const day = doc.data() || {};
+    const dateKey = day.date;
+    let event = null;
+    if (dateKey) {
+      try {
+        const dayEventsSnap = await db
+          .collection(`${prefix}Events`)
+          .where("date", "==", dateKey)
+          .get();
+        const dayEvents = dayEventsSnap.docs
+          .map(d => d.data())
+          .sort((a, b) => (b?.createdAt || 0) - (a?.createdAt || 0));
+        const latestEvent = dayEvents[0];
+        if (latestEvent) {
+          const eventId = latestEvent.eventId || latestEvent.id || null;
+          const displayName = latestEvent.tourneyName
+            || latestEvent.tournamentName
+            || latestEvent.event
+            || latestEvent.eventName
+            || latestEvent.tournament
+            || eventId
+            || null;
+          const url = eventId ? `${eventUrlPrefix}/${encodeURIComponent(eventId)}` : null;
+          if (displayName || url) event = { name: displayName, url };
+        }
+      } catch (e) {
+        console.error(`[home] failed to fetch ${prefix} event for ${dateKey}`, e);
+      }
+    }
+    return { ...day, event: event || null };
+  }));
   // decks
   const decksSnap = await db.collection(`${prefix}DecksAgg`).get();
   const decks = decksSnap.docs.map(d=>d.data()).map(d => ({
@@ -69,11 +101,20 @@ function mergeHome(a, b, limitDays){
 
   // lastDays (merge by date)
   const map = new Map();
-  for (const d of a.lastDays) map.set(d.date, { ...d });
+  for (const d of a.lastDays) {
+    const event = d && d.event ? { ...d.event } : null;
+    map.set(d.date, { ...d, event });
+  }
   for (const d of b.lastDays) {
-    const prev = map.get(d.date) || { date: d.date, counts:{W:0,L:0,T:0}, wr:0 };
-    const mergedCounts = sumCounts(prev.counts, d.counts);
-    map.set(d.date, { date: d.date, counts: mergedCounts, wr: wrPercent(mergedCounts) });
+    const prev = map.get(d.date) || { date: d.date, counts:{W:0,L:0,T:0}, wr:0, event:null };
+    const mergedCounts = sumCounts(prev.counts || {}, d.counts || {});
+    const mergedEvent = prev.event || d.event || null;
+    map.set(d.date, {
+      date: d.date,
+      counts: mergedCounts,
+      wr: wrPercent(mergedCounts),
+      event: mergedEvent ? { ...mergedEvent } : null
+    });
   }
   const lastDays = Array.from(map.values()).sort((x,y)=> String(y.date).localeCompare(String(x.date))).slice(0, limitDays);
 
