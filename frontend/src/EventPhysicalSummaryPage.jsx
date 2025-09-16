@@ -265,7 +265,15 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
     if (!eventId) return;
     getPhysicalRounds(eventId)
       .then((rs) => {
-        setRounds(Array.isArray(rs) ? rs : []);
+        const safeRounds = Array.isArray(rs)
+          ? rs.map((r) => ({
+              ...r,
+              g1: r?.g1 || {},
+              g2: r?.g2 || {},
+              g3: r?.g3 || {},
+            }))
+          : [];
+        setRounds(safeRounds);
       })
       .catch((err) => {
         console.error("Falha ao carregar rounds", err);
@@ -390,9 +398,9 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       oppMonB: r.oppMonB
         ? (typeof r.oppMonB === "object" ? r.oppMonB : { slug: r.oppMonB, name: r.oppMonB })
         : null,
-      g1: { ...(r.g1||{result:"",order:""}) },
-      g2: { ...(r.g2||{result:"",order:""}) },
-      g3: { ...(r.g3||{result:"",order:""}) },
+      g1: { ...(r?.g1 || { result: "", order: "" }) },
+      g2: { ...(r?.g2 || { result: "", order: "" }) },
+      g3: { ...(r?.g3 || { result: "", order: "" }) },
       noShow: r.flags?.noShow || false,
       bye: r.flags?.bye || false,
     });
@@ -630,7 +638,7 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
           const forcedW = r.flags?.noShow || r.flags?.bye;
           const resStr = forcedW
             ? "W"
-            : `${r.g1.result || ""}${r.g2.result || ""}${r.g3.result || ""}`.trim();
+            : `${r.g1?.result || ""}${r.g2?.result || ""}${r.g3?.result || ""}`.trim();
           const slugA =
             r.oppMonASlug ||
             (r.oppMonA && typeof r.oppMonA === "object" ? r.oppMonA.slug : r.oppMonA);
@@ -690,9 +698,9 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
                     )}
                   </div>
                   <div className="mt-2 text-xs grid grid-cols-1 md:grid-cols-3 gap-2">
-                    <div>J1: {r.g1.result || "—"} {r.g1.order ? `(${r.g1.order})` : ""}</div>
-                    <div>J2: {r.g2.result || "—"} {r.g2.order ? `(${r.g2.order})` : ""}</div>
-                    <div>J3: {r.g3.result || "—"} {r.g3.order ? `(${r.g3.order})` : ""}</div>
+                    <div>J1: {r.g1?.result || "—"} {r.g1?.order ? `(${r.g1?.order})` : ""}</div>
+                    <div>J2: {r.g2?.result || "—"} {r.g2?.order ? `(${r.g2?.order})` : ""}</div>
+                    <div>J3: {r.g3?.result || "—"} {r.g3?.order ? `(${r.g3?.order})` : ""}</div>
                   </div>
                 </div>
               )}
