@@ -629,8 +629,12 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
           const resStr = forcedW
             ? "W"
             : `${r.g1.result || ""}${r.g2.result || ""}${r.g3.result || ""}`.trim();
-          const slugA = r.oppMonASlug || (typeof r.oppMonA === "object" ? r.oppMonA.slug : r.oppMonA);
-          const slugB = r.oppMonBSlug || (typeof r.oppMonB === "object" ? r.oppMonB.slug : r.oppMonB);
+          const slugA =
+            r.oppMonASlug ||
+            (r.oppMonA && typeof r.oppMonA === "object" ? r.oppMonA.slug : r.oppMonA);
+          const slugB =
+            r.oppMonBSlug ||
+            (r.oppMonB && typeof r.oppMonB === "object" ? r.oppMonB.slug : r.oppMonB);
 
           return (
             <div
