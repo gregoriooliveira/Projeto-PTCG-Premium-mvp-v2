@@ -1343,7 +1343,7 @@ r.get("/logs", async (req, res) => {
 
     rows.sort((a, b) => {
       const aTs = typeof a.ts === "number" && Number.isFinite(a.ts) ? a.ts : computeEventTimestamp(a);
-      const bTs = typeof b.ts === "number" && Number.isFinite(b.ts) ? bTs : computeEventTimestamp(b);
+      const bTs = typeof b.ts === "number" && Number.isFinite(b.ts) ? b.ts : computeEventTimestamp(b);
       return bTs - aTs;
     });
 
