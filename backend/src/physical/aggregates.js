@@ -32,16 +32,68 @@ export async function recomputeDeck(deckKey) {
   }
   let counts = { W: 0, L: 0, T: 0 };
   let games = 0;
+  const pokemons = [];
   snap.forEach(d => {
     const ev = d.data();
     counts = countsAdd(counts, countsOfResult(ev.result));
     games += 1;
+    if (pokemons.length < 2 && Array.isArray(ev.pokemons)) {
+      for (const raw of ev.pokemons) {
+        if (pokemons.length >= 2) break;
+        let slug = null;
+        if (typeof raw === "string") {
+          slug = raw;
+        } else if (raw && typeof raw === "object") {
+          if (typeof raw.slug === "string") slug = raw.slug;
+          else if (typeof raw.name === "string") slug = raw.name;
+          else if (typeof raw.id === "string") slug = raw.id;
+        }
+        if (typeof slug === "string") {
+          const trimmed = slug.trim();
+          if (trimmed && !pokemons.includes(trimmed)) pokemons.push(trimmed);
+        }
+      }
+    }
   });
   const wr = wrPercent(counts);
   await db.collection("physicalDecksAgg").doc(docId).set(
-    { deckKey, games, counts, wr },
+    { deckKey, games, counts, wr, pokemons },
     { merge: true }
   );
+}
+
+/** Recalcula todos os decks existentes em physicalDecksAgg */
+export async function recomputeAllDeckAggregates() {
+  const deckKeys = new Set();
+  try {
+    const snap = await db.collection("physicalDecksAgg").get();
+    snap.forEach(doc => {
+      const data = doc.data() || {};
+      let key = data.deckKey;
+      if (!key) {
+        try {
+          key = decodeURIComponent(doc.id);
+        } catch (err) {
+          console.error("[recomputeAllDeckAggregates] failed to decode doc id", doc.id, err);
+        }
+      }
+      if (key) deckKeys.add(key);
+    });
+  } catch (err) {
+    console.error("[recomputeAllDeckAggregates] failed to list deck keys", err);
+    return [];
+  }
+
+  const processed = [];
+  for (const key of deckKeys) {
+    try {
+      await recomputeDeck(key);
+      processed.push(key);
+    } catch (err) {
+      console.error(`[recomputeAllDeckAggregates] failed to recompute ${key}`, err);
+    }
+  }
+  return processed;
 }
 
 /** Recalcula o agregado por oponente */
