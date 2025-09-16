@@ -88,10 +88,9 @@ const Last5DaysWidget = ({ home }) => {
   return (
     <WidgetCard title="Últimos Registros" icon={CalendarDays} className="col-span-12 md:col-span-6">
       <div className="grid grid-cols-12 font-mono text-xs text-zinc-400 mb-2">
-        <div className="col-span-3">Data</div>
-        <div className="col-span-4">Partida</div>
-        <div className="col-span-2 text-center">Resultado</div>
-        <div className="col-span-3 text-right md:text-left">Decks</div>
+        <div className="col-span-4">Data</div>
+        <div className="col-span-5">Partida</div>
+        <div className="col-span-3 text-center">Resultado</div>
       </div>
 
       <div className="space-y-2">
@@ -102,9 +101,6 @@ const Last5DaysWidget = ({ home }) => {
           const resultClass = getResultClass(result);
           const name = typeof log?.name === "string" && log.name.trim().length > 0 ? log.name : "—";
           const date = typeof log?.dateISO === "string" && log.dateISO.trim().length > 0 ? log.dateISO : "—";
-          const playerDeck = typeof log?.playerDeck === "string" && log.playerDeck.trim().length > 0 ? log.playerDeck : "—";
-          const opponentDeck =
-            typeof log?.opponentDeck === "string" && log.opponentDeck.trim().length > 0 ? log.opponentDeck : "—";
           const key = log.eventId || [log.dateISO, log.name].filter(Boolean).join("-") || date;
 
           return (
@@ -112,8 +108,8 @@ const Last5DaysWidget = ({ home }) => {
               key={key}
               className="grid grid-cols-12 items-start gap-2 py-2 border-b border-zinc-800/60 last:border-b-0"
             >
-              <div className="col-span-3 text-sm text-zinc-200">{date}</div>
-              <div className="col-span-4 text-sm text-zinc-200 truncate">
+              <div className="col-span-4 text-sm text-zinc-200">{date}</div>
+              <div className="col-span-5 text-sm text-zinc-200 truncate">
                 {href ? (
                   <a href={href} className="hover:underline underline-offset-2">
                     {name}
@@ -122,14 +118,10 @@ const Last5DaysWidget = ({ home }) => {
                   name
                 )}
               </div>
-              <div className="col-span-2 flex justify-center">
+              <div className="col-span-3 flex justify-center">
                 <Pill>
                   <span className={`font-semibold ${resultClass}`}>{result}</span>
                 </Pill>
-              </div>
-              <div className="col-span-3 text-xs text-zinc-300 text-right md:text-left">
-                <div className="truncate">{playerDeck}</div>
-                <div className="truncate text-zinc-500">vs {opponentDeck}</div>
               </div>
             </div>
           );
