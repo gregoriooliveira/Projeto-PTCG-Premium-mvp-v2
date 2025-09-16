@@ -183,6 +183,7 @@ describe("physical routes PATCH /events/:id", () => {
       },
     };
     const res = createRes();
+    const original = clone(eventsStore.evt1);
 
     await handler(req, res);
 
@@ -205,7 +206,9 @@ describe("physical routes PATCH /events/:id", () => {
     });
     expect(res.body).toEqual(eventsStore.evt1);
     expect(recomputeAllForEvent).toHaveBeenCalledOnce();
-    expect(recomputeAllForEvent).toHaveBeenCalledWith(res.body);
+    const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
+    expect(prevArg).toMatchObject(original);
+    expect(nextArg).toEqual(res.body);
   });
 
   it("clears metadata when blank values are provided", async () => {
@@ -222,6 +225,7 @@ describe("physical routes PATCH /events/:id", () => {
       },
     };
     const res = createRes();
+    const original = clone(eventsStore.evt1);
 
     await handler(req, res);
 
@@ -241,7 +245,9 @@ describe("physical routes PATCH /events/:id", () => {
       format: null,
       classification: null,
     });
-    expect(recomputeAllForEvent).toHaveBeenCalledWith(res.body);
+    const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
+    expect(prevArg).toMatchObject(original);
+    expect(nextArg).toEqual(res.body);
   });
 });
 
@@ -279,6 +285,8 @@ describe("physical routes DELETE /events/:id", () => {
     expect(roundsStore.evt1).toBeUndefined();
     expect(rawLogsStore.raw1).toBeUndefined();
     expect(recomputeAllForEvent).toHaveBeenCalledOnce();
-    expect(recomputeAllForEvent).toHaveBeenCalledWith(originalEvent);
+    const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
+    expect(prevArg).toMatchObject(originalEvent);
+    expect(nextArg).toBeNull();
   });
 });
