@@ -166,12 +166,14 @@ function normalizePokemonPair(p1, p2) {
 function computeMatchResult(round) {
   const flags = round?.flags || round;
   if (flags?.bye || flags?.noShow) return "V";
-  const games = [round.g1, round.g2, round.g3];
-  let v = 0, d = 0, e = 0;
+  const games = [round.g1 || {}, round.g2 || {}, round.g3 || {}];
+  let v = 0,
+    d = 0,
+    e = 0;
   for (const g of games) {
-    if (g.result === "V") v += 1;
-    else if (g.result === "D") d += 1;
-    else if (g.result === "E") e += 1;
+    if (g.result === "V") v++;
+    else if (g.result === "D") d++;
+    else if (g.result === "E") e++;
   }
   if (v > d) return "V";
   if (d > v) return "D";
