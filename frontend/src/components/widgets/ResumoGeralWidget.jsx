@@ -34,7 +34,7 @@ export default function ResumoGeralWidget({ title, variant, winRate, center, top
       </div>
       <div className="text-right">
         <div className={`text-sm font-medium leading-tight ${isDatasLive ? 'whitespace-normal break-words max-w-none' : 'truncate '} ${isFisico ? '' : ''}` }>
-        <DeckLabel deckName={topDeck?.deckName} stacked />
+        <DeckLabel deckName={topDeck?.deckName} pokemonHints={topDeck?.pokemons} stacked />
         </div>
         <div className="text-xs text-zinc-400">
           Top Deck • <span className="text-zinc-200 font-medium">{(topDeck?.winRate ?? 0).toFixed(1)}% WR</span>
@@ -109,6 +109,7 @@ ResumoGeralWidget.propTypes = {
     deckName: PropTypes.string,
     winRate: PropTypes.number,
     avatars: PropTypes.arrayOf(PropTypes.string),
+    pokemons: PropTypes.arrayOf(PropTypes.string),
     href: PropTypes.string,
   }),
 };
