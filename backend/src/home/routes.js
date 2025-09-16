@@ -16,8 +16,16 @@ async function sourceSummary(prefix, limitDays){
   let counts = {W:0,L:0,T:0};
   for (const e of events) counts = sumCounts(counts, {W: e.result==='W'?1:0, L: e.result==='L'?1:0, T: e.result==='T'?1:0});
   const recentLogs = events.slice(0,10).map(ev => ({
-    eventId: ev.eventId, dateISO: ev.date, result: ev.result,
-    playerDeck: ev.deckName, opponentDeck: ev.opponentDeck,
+    eventId: ev.eventId,
+    dateISO: ev.date,
+    result: ev.result,
+    playerDeck: ev.deckName,
+    opponentDeck: ev.opponentDeck,
+    name: prefix === "live"
+      ? ((ev.you && ev.opponent)
+          ? `${ev.you} vs ${ev.opponent}`
+          : (ev.event || ev.tourneyName || ev.tournamentName || ev.eventName || ev.tournament || ev.eventId || ""))
+      : (ev.name || ev.nome || ev.tourneyName || ev.tournamentName || ev.event || ev.eventName || ev.tournament || ev.eventId || ""),
     source: prefix
   }));
   // days
@@ -39,13 +47,14 @@ async function sourceSummary(prefix, limitDays){
         const latestEvent = dayEvents[0];
         if (latestEvent) {
           const eventId = latestEvent.eventId || latestEvent.id || null;
-          const displayName = latestEvent.tourneyName
-            || latestEvent.tournamentName
-            || latestEvent.event
-            || latestEvent.eventName
-            || latestEvent.tournament
-            || eventId
-            || null;
+          let displayName;
+          if (prefix === "live") {
+            const you = latestEvent.you || "";
+            const opp = latestEvent.opponent || "";
+            displayName = you && opp ? `${you} vs ${opp}` : (latestEvent.event || latestEvent.tourneyName || latestEvent.tournamentName || latestEvent.eventName || latestEvent.tournament || eventId || null);
+          } else {
+            displayName = latestEvent.name || latestEvent.nome || latestEvent.tourneyName || latestEvent.tournamentName || latestEvent.event || latestEvent.eventName || latestEvent.tournament || eventId || null;
+          }
           const url = eventId ? `${eventUrlPrefix}/${encodeURIComponent(eventId)}` : null;
           if (displayName || url) event = { name: displayName, url };
         }
