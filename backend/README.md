@@ -96,13 +96,23 @@ Agregações (dias, decks, oponentes, torneios) são atualizadas **on write** pe
 
 Principais rotas para eventos do TCG Físico (espelham as de Live):
 
-- `POST   /api/physical/events`
-- `GET    /api/physical/events/:id`
-- `PATCH  /api/physical/events/:id`
-- `DELETE /api/physical/events/:id`
-- `GET    /api/physical/summary?limitDays=5`
-- `GET    /api/physical/days/:date`
-- `GET    /api/physical/decks`
+- `POST   /api/physical/events` — Cria um evento/log físico e recalcula agregações.
+- `GET    /api/physical/events/:id` — Retorna os detalhes de um evento, incluindo log bruto quando disponível.
+- `PATCH  /api/physical/events/:id` — Atualiza campos específicos de um evento físico.
+- `DELETE /api/physical/events/:id` — Remove um evento e limpa rounds ou logs associados.
+- `GET    /api/physical/events` — Lista os eventos físicos mais recentes (parâmetro `limit` opcional).
+- `GET    /api/physical/events/:eventId/rounds` — Lista os rounds cadastrados para um evento.
+- `POST   /api/physical/events/:eventId/rounds` — Registra um round para o evento e atualiza estatísticas.
+- `GET    /api/physical/summary?limitDays=5` — Entrega um resumo agregado (dias, decks, torneios, oponentes e logs recentes).
+- `GET    /api/physical/days/:date` — Mostra os eventos e o resumo de vitórias/derrotas de um dia específico.
+- `GET    /api/physical/decks` — Retorna agregações por deck (`deck` opcional para filtrar por chave normalizada).
+- `GET    /api/physical/decks/:deck/logs` — Lista os eventos jogados com um deck específico (playerDeckKey).
+- `GET    /api/physical/decks/:id` — Consulta metadados de um deck salvo (nome e avatares).
+- `GET    /api/physical/tournaments` — Lista torneios agregados, com filtro opcional por `query`.
+- `GET    /api/physical/tournaments/suggest` — Sugere torneios para autocomplete (filtro `q`).
+- `GET    /api/physical/tournaments/:id` — Exibe detalhes de um torneio e rounds associados.
+- `GET    /api/physical/opponents-agg` — Lista estatísticas agregadas por oponente enfrentado.
+- `GET    /api/physical/logs` — Retorna logs paginados de eventos físicos (aceita `limit`, `offset`, `opponent`).
 
 Exemplo de criação de evento:
 
