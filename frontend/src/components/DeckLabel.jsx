@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { resolveIconsFromDeck } from "../services/pokemonIcons.js";
 
-export default function DeckLabel({ deckName, pokemonHints, stacked = false, className = "" }) {
+export default function DeckLabel({
+  deckName,
+  pokemonHints,
+  stacked = false,
+  className = "",
+  showIcons = true,
+}) {
   const [icons, setIcons] = useState([]);
 
   const candidates = useMemo(() => {
@@ -11,6 +17,11 @@ export default function DeckLabel({ deckName, pokemonHints, stacked = false, cla
   }, [deckName, pokemonHints]);
 
   useEffect(() => {
+    if (!showIcons) {
+      setIcons([]);
+      return;
+    }
+
     let alive = true;
     (async () => {
       try {
@@ -20,32 +31,39 @@ export default function DeckLabel({ deckName, pokemonHints, stacked = false, cla
         if (alive) setIcons([]);
       }
     })();
-    return () => { alive = false; };
-  }, [candidates]);
+    return () => {
+      alive = false;
+    };
+  }, [candidates, showIcons]);
 
-  const imgs = icons.slice(0, 2).map((src, idx) => (
-    <img
-      key={idx}
-      src={src}
-      alt=""
-      className="h-[18px] w-[18px] rounded-full ring-1 ring-zinc-800/60 object-cover shrink-0"
-      loading="lazy"
-      decoding="async"
-    />
-  ));
+  const imgs = showIcons
+    ? icons.slice(0, 2).map((src, idx) => (
+        <img
+          key={idx}
+          src={src}
+          alt=""
+          className="h-[18px] w-[18px] rounded-full ring-1 ring-zinc-800/60 object-cover shrink-0"
+          loading="lazy"
+          decoding="async"
+        />
+      ))
+    : [];
 
   if (stacked) {
     // Exibe em 2 linhas quando o nome do deck é composto (A / B)
     const [a, b] = String(deckName || "").split(" / ");
+    const firstIcon = showIcons ? imgs[0] : null;
+    const secondIcon = showIcons ? imgs[1] : null;
+
     return (
       <div className={`min-w-0 flex flex-col gap-1 ${className}`}>
         <div className="flex items-center gap-2 min-w-0">
-          {imgs[0]}
+          {firstIcon}
           <span className="truncate">{a || deckName}</span>
         </div>
-        { (b || imgs[1]) && (
+        {(b || secondIcon) && (
           <div className="flex items-center gap-2 min-w-0">
-            {imgs[1]}
+            {secondIcon}
             <span className="truncate">{b}</span>
           </div>
         )}
@@ -55,7 +73,7 @@ export default function DeckLabel({ deckName, pokemonHints, stacked = false, cla
 
   return (
     <div className={`min-w-0 flex items-center gap-2 ${className}`}>
-      {imgs}
+      {showIcons && imgs}
       <span className="truncate">{deckName}</span>
     </div>
   );
