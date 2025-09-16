@@ -33,8 +33,8 @@ const Pill = ({ children }) => (
   </span>
 );
 
-const WLTriplet = ({ W = 0, L = 0, T = 0 }) => (
-  <div className="text-xl font-semibold text-zinc-200">
+const WLTriplet = ({ W = 0, L = 0, T = 0, className = "" }) => (
+  <div className={`text-xl font-semibold text-zinc-200 ${className}`}>
     <span className="text-emerald-400">{W}</span>
     <span className="mx-1 text-zinc-500">/</span>
     <span className="text-rose-400">{L}</span>
@@ -71,18 +71,86 @@ const Last5DaysWidget = ({ home }) => {
   const rawLogs = Array.isArray(home?.recentLogs) ? home.recentLogs : [];
   const logs = rawLogs.filter((log) => log && typeof log === "object").slice(0, 5);
 
+  const normalizeCounts = (counts) => {
+    if (!counts || typeof counts !== "object") return null;
+    const keys = ["W", "L", "T"];
+    let hasValue = false;
+    const parsed = { W: 0, L: 0, T: 0 };
+    for (const key of keys) {
+      if (counts[key] == null) continue;
+      const n = Number(counts[key]);
+      if (Number.isFinite(n)) {
+        parsed[key] = n;
+        hasValue = true;
+      }
+    }
+    return hasValue ? parsed : null;
+  };
+
+  const countsFromArray = (results) => {
+    if (!Array.isArray(results)) return null;
+    const acc = { W: 0, L: 0, T: 0 };
+    let hasValue = false;
+    for (const raw of results) {
+      if (typeof raw !== "string") continue;
+      const upper = raw.trim().toUpperCase();
+      if (!upper) continue;
+      if (upper === "W") {
+        acc.W += 1;
+        hasValue = true;
+      } else if (upper === "L") {
+        acc.L += 1;
+        hasValue = true;
+      } else if (upper === "T") {
+        acc.T += 1;
+        hasValue = true;
+      }
+    }
+    return hasValue ? acc : null;
+  };
+
+  const countsFromResultString = (result) => {
+    if (typeof result !== "string") return null;
+    const trimmed = result.trim();
+    if (!trimmed) return null;
+    if (/^[WLT]$/i.test(trimmed)) {
+      const upper = trimmed.toUpperCase();
+      return {
+        W: upper === "W" ? 1 : 0,
+        L: upper === "L" ? 1 : 0,
+        T: upper === "T" ? 1 : 0,
+      };
+    }
+    const parts = trimmed.split(/[^0-9]+/).filter(Boolean);
+    if (parts.length === 3) {
+      return {
+        W: Number(parts[0]) || 0,
+        L: Number(parts[1]) || 0,
+        T: Number(parts[2]) || 0,
+      };
+    }
+    if (parts.length === 2) {
+      return {
+        W: Number(parts[0]) || 0,
+        L: Number(parts[1]) || 0,
+        T: 0,
+      };
+    }
+    return null;
+  };
+
+  const getCountsForLog = (log) =>
+    normalizeCounts(log?.counts) ||
+    normalizeCounts(log?.stats?.counts) ||
+    normalizeCounts(log?.stats) ||
+    countsFromArray(log?.results) ||
+    countsFromResultString(log?.result) || { W: 0, L: 0, T: 0 };
+
   const buildLogHref = (log) => {
     if (!log?.eventId) return null;
     if (log?.source === "live") return `#/tcg-live/logs/${encodeURIComponent(log.eventId)}`;
     if (log?.source === "physical") return `#/tcg-fisico/eventos/${encodeURIComponent(log.eventId)}`;
     return null;
-  };
-
-  const getResultClass = (result) => {
-    if (result === "W") return "text-emerald-400";
-    if (result === "L") return "text-rose-400";
-    if (result === "T") return "text-amber-400";
-    return "text-zinc-300";
   };
 
   return (
@@ -97,11 +165,10 @@ const Last5DaysWidget = ({ home }) => {
         {logs.length === 0 && <div className="text-sm text-zinc-400">Sem partidas ainda.</div>}
         {logs.map((log) => {
           const href = buildLogHref(log);
-          const result = typeof log?.result === "string" ? log.result : "—";
-          const resultClass = getResultClass(result);
           const name = typeof log?.name === "string" && log.name.trim().length > 0 ? log.name : "—";
           const date = typeof log?.dateISO === "string" && log.dateISO.trim().length > 0 ? log.dateISO : "—";
           const key = log.eventId || [log.dateISO, log.name].filter(Boolean).join("-") || date;
+          const counts = getCountsForLog(log);
 
           return (
             <div
@@ -119,9 +186,7 @@ const Last5DaysWidget = ({ home }) => {
                 )}
               </div>
               <div className="col-span-3 flex justify-center">
-                <Pill>
-                  <span className={`font-semibold ${resultClass}`}>{result}</span>
-                </Pill>
+                <WLTriplet {...counts} className="text-sm" />
               </div>
             </div>
           );
