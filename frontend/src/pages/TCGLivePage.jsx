@@ -253,14 +253,12 @@ export default function TCGLivePage() {
     // 1) Carrega dados principais (home ou fallback)
     (async () => {
       let norm = null;
-      const home =
-        (await tryJson(`${API}/api/home?source=all&limit=5`)) ||
-        (await tryJson(`${API}/api/live/home?source=all&limit=5`));
+      const home = await tryJson(`${API}/api/home?source=live&limit=5`);
       if (home) {
         norm = normalizeFromHome(home);
       } else {
         const logs =
-          (await tryJson(`${API}/api/live/logs?source=all&limit=200`)) ||
+          (await tryJson(`${API}/api/live/logs?source=live&limit=200`)) ||
           (await tryJson(`${API}/api/live/logs?limit=200`));
         // usamos só o summary daqui; "Todos os Registros" terá sua própria busca separada
         norm = { ...normalizeFromLogs(logs || {}), recentTournaments: [] };
@@ -310,7 +308,7 @@ export default function TCGLivePage() {
         setLoadingLogs(true);
         const logsJson =
           (await tryJson(`${API}/api/live/logs?limit=500`)) ||
-          (await tryJson(`${API}/api/live/logs?source=all&limit=500`));
+          (await tryJson(`${API}/api/live/logs?source=live&limit=500`));
         const rows = safeArray(logsJson?.rows || logsJson)
           .filter(r => (r.source || r.origin || "live").toLowerCase().includes("live"))
           .map(r => ({
