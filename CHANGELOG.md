@@ -21,7 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `GET /api/live/logs` falls back to in-memory scan and sort when `orderBy` index is unavailable.
 
 ### Frontend
-- Opponents page uses `getOpponentLogs(opponent, { limit: 10000, offset: 0 })` keeping mapping and UI intact.
+- `#/oponentes` combina agregados e logs de `/api/live` e `/api/physical`, deduplica e ordena os resultados e constrói link dinâmico para `#/tcg-fisico/eventos/:id`.
+- As chamadas de fallback rodam em paralelo e cada log leva o `source` que indica qual endpoint o originou.
 - `ImportLogsModal`: label updated to "(obrigatório)" and input marked `required`.
 - Fix `getOpponentLogs` call (numeric limit/offset) and show deck label fallback (`opponentDeck` ∨ `topDeckName` ∨ `fromSlugToName(topDeckKey)`).
 - `api.js` `getOpponentLogs` falls back to fetching all logs and client-side filtering when the server returns zero rows.
