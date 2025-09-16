@@ -163,10 +163,10 @@ function normalizePokemonPair(p1, p2) {
   return `${x}/${y}`;
 }
 
-function computeMatchResult(round) {
+function computeMatchResult(round = {}) {
   const flags = round?.flags || round;
   if (flags?.bye || flags?.noShow) return "V";
-  const games = [round.g1 || {}, round.g2 || {}, round.g3 || {}];
+  const games = [round?.g1 ?? {}, round?.g2 ?? {}, round?.g3 ?? {}];
   let v = 0,
     d = 0,
     e = 0;
@@ -334,8 +334,8 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
   useEffect(() => {
     const slugs = [];
     for (const r of rounds) {
-      const s1 = r.oppMonASlug || (typeof r.oppMonA === "object" ? r.oppMonA.slug : r.oppMonA);
-      const s2 = r.oppMonBSlug || (typeof r.oppMonB === "object" ? r.oppMonB.slug : r.oppMonB);
+      const s1 = r.oppMonASlug || r.oppMonA?.slug || r.oppMonA;
+      const s2 = r.oppMonBSlug || r.oppMonB?.slug || r.oppMonB;
       if (s1) slugs.push(s1);
       if (s2) slugs.push(s2);
     }
@@ -432,13 +432,15 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     const round = {
       id: `r-${rounds.length + 1}`,
       number: rounds.length + 1,
-      opponentName: form.opponentName.trim(),
-      opponentDeckName: form.opponentDeckName.trim(),
-      oppMonA: form.oppMonA || null,
-      oppMonB: form.oppMonB || null,
-      oppMonASlug: form.oppMonA?.slug || (typeof form.oppMonA === "string" ? form.oppMonA : null),
-      oppMonBSlug: form.oppMonB?.slug || (typeof form.oppMonB === "string" ? form.oppMonB : null),
-      normOppDeckKey: normalizePokemonPair(form.oppMonA, form.oppMonB),
+      opponentName: form.opponentName?.trim() || "",
+      opponentDeckName: form.opponentDeckName?.trim() || "",
+      oppMonA: form.oppMonA || undefined,
+      oppMonB: form.oppMonB || undefined,
+      oppMonASlug:
+        form.oppMonA?.slug || (typeof form.oppMonA === "string" ? form.oppMonA : undefined),
+      oppMonBSlug:
+        form.oppMonB?.slug || (typeof form.oppMonB === "string" ? form.oppMonB : undefined),
+      normOppDeckKey: normalizePokemonPair(form.oppMonA, form.oppMonB) || "",
       g1: { ...form.g1 },
       g2: canShowGame2() ? { ...form.g2 } : { result: "", order: "" },
       g3: canShowGame3() ? { ...form.g3 } : { result: "", order: "" },
