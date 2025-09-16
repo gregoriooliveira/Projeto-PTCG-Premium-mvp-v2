@@ -219,7 +219,7 @@ const WLTriplet = ({ W = 0, L = 0, T = 0 }) => (
     <span className="mx-1 text-zinc-500">/</span>
     <span className="text-rose-400">{L}</span>
     <span className="mx-1 text-zinc-500">/</span>
-    <span className="text-sky-400">{T}</span>
+    <span className="text-amber-400">{T}</span>
   </div>
 );
 
