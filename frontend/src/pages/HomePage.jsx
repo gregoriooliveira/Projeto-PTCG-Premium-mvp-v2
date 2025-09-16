@@ -68,45 +68,72 @@ const TopBarWidget = ({ home }) => {
 };
 
 const Last5DaysWidget = ({ home }) => {
-  const days = Array.isArray(home?.lastDays) ? home.lastDays : [];
-  const validDays = days.filter((d) => {
-    if (!d || typeof d !== "object") return false;
-    const event = d.event;
-    if (!event || typeof event !== "object") return false;
-    const hasName = typeof event.name === "string" && event.name.trim().length > 0;
-    const hasUrl = typeof event.url === "string" && event.url.trim().length > 0;
-    return hasName && hasUrl;
-  });
+  const rawLogs = Array.isArray(home?.recentLogs) ? home.recentLogs : [];
+  const logs = rawLogs.filter((log) => log && typeof log === "object").slice(0, 5);
+
+  const buildLogHref = (log) => {
+    if (!log?.eventId) return null;
+    if (log?.source === "live") return `#/tcg-live/logs/${encodeURIComponent(log.eventId)}`;
+    if (log?.source === "physical") return `#/tcg-fisico/eventos/${encodeURIComponent(log.eventId)}`;
+    return null;
+  };
+
+  const getResultClass = (result) => {
+    if (result === "W") return "text-emerald-400";
+    if (result === "L") return "text-rose-400";
+    if (result === "T") return "text-amber-400";
+    return "text-zinc-300";
+  };
 
   return (
-    <WidgetCard title="Ultimos Registros" icon={CalendarDays} className="col-span-12 md:col-span-6">
-      {/* Cabeçalho inserido */}
-      <div className="grid grid-cols-4 font-mono text-xs text-zinc-400 mb-2">
-        <div>Data</div>
-        <div>Evento</div>
-        <div className="text-center">Resultado</div>
-        <div className="text-right">WinRate</div>
+    <WidgetCard title="Últimos Registros" icon={CalendarDays} className="col-span-12 md:col-span-6">
+      <div className="grid grid-cols-12 font-mono text-xs text-zinc-400 mb-2">
+        <div className="col-span-3">Data</div>
+        <div className="col-span-4">Partida</div>
+        <div className="col-span-2 text-center">Resultado</div>
+        <div className="col-span-3 text-right md:text-left">Decks</div>
       </div>
 
       <div className="space-y-2">
-        {validDays.length === 0 && <div className="text-sm text-zinc-400">Sem partidas ainda.</div>}
-        {validDays.map((d) => (
-          <div
-            key={d.date || d.event.name}
-            className="grid grid-cols-4 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0"
-          >
-            <div className="text-sm text-zinc-200"><span>{d.date || "—"}</span></div>
-            <div className="text-sm text-zinc-200 truncate">
-              <a href={d.event.url} className="hover:underline underline-offset-2">
-                {d.event.name}
-              </a>
+        {logs.length === 0 && <div className="text-sm text-zinc-400">Sem partidas ainda.</div>}
+        {logs.map((log) => {
+          const href = buildLogHref(log);
+          const result = typeof log?.result === "string" ? log.result : "—";
+          const resultClass = getResultClass(result);
+          const name = typeof log?.name === "string" && log.name.trim().length > 0 ? log.name : "—";
+          const date = typeof log?.dateISO === "string" && log.dateISO.trim().length > 0 ? log.dateISO : "—";
+          const playerDeck = typeof log?.playerDeck === "string" && log.playerDeck.trim().length > 0 ? log.playerDeck : "—";
+          const opponentDeck =
+            typeof log?.opponentDeck === "string" && log.opponentDeck.trim().length > 0 ? log.opponentDeck : "—";
+          const key = log.eventId || [log.dateISO, log.name].filter(Boolean).join("-") || date;
+
+          return (
+            <div
+              key={key}
+              className="grid grid-cols-12 items-start gap-2 py-2 border-b border-zinc-800/60 last:border-b-0"
+            >
+              <div className="col-span-3 text-sm text-zinc-200">{date}</div>
+              <div className="col-span-4 text-sm text-zinc-200 truncate">
+                {href ? (
+                  <a href={href} className="hover:underline underline-offset-2">
+                    {name}
+                  </a>
+                ) : (
+                  name
+                )}
+              </div>
+              <div className="col-span-2 flex justify-center">
+                <Pill>
+                  <span className={`font-semibold ${resultClass}`}>{result}</span>
+                </Pill>
+              </div>
+              <div className="col-span-3 text-xs text-zinc-300 text-right md:text-left">
+                <div className="truncate">{playerDeck}</div>
+                <div className="truncate text-zinc-500">vs {opponentDeck}</div>
+              </div>
             </div>
-            <div className="flex justify-center">
-              <WLTriplet {...(d.counts || { W: 0, L: 0, T: 0 })} />
-            </div>
-            <div className="flex justify-end"><Pill>WR {d.wr}</Pill></div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </WidgetCard>
   );
