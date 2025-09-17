@@ -309,6 +309,37 @@ function mergePokemonHints(target = [], source = []) {
   return Array.from(set).slice(0, 2);
 }
 
+function sanitizePokemonHintsList(source) {
+  const arr = Array.isArray(source) ? source : source != null ? [source] : [];
+  const out = [];
+  for (const raw of arr) {
+    let value = "";
+    if (typeof raw === "string") {
+      value = raw;
+    } else if (raw && typeof raw === "object") {
+      for (const key of ["slug", "name", "id"]) {
+        const candidate = raw[key];
+        if (typeof candidate === "string" && candidate.trim()) {
+          value = candidate;
+          break;
+        }
+      }
+    } else if (raw != null) {
+      value = String(raw);
+    }
+    const slug = String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (!slug || out.includes(slug)) continue;
+    out.push(slug);
+    if (out.length >= 2) break;
+  }
+  return out;
+}
+
 async function recomputeRoundsAgg(eventId) {
   const eventRef = db.collection("physicalEvents").doc(eventId);
   let prevData = {};
@@ -764,21 +795,42 @@ r.get("/opponents-agg", async (req, res) => {
     const out = [];
     for (const doc of snap.docs){
       const d = doc.data() || {};
+      const topPokemons = sanitizePokemonHintsList(d.topPokemons);
       let topDeck = null;
       if (d.topDeckKey){
         const deckDoc = await db.collection("decks").doc(safeDocId(d.topDeckKey)).get();
         if (deckDoc.exists){
           const info = deckDoc.data() || {};
+          const deckPokemons = Array.isArray(info.spriteIds) && info.spriteIds.length
+            ? info.spriteIds
+            : Array.isArray(info.pokemons) && info.pokemons.length
+              ? info.pokemons
+              : null;
+          const resolvedPokemons = deckPokemons && deckPokemons.length
+            ? deckPokemons
+            : topPokemons.length
+              ? [...topPokemons]
+              : null;
           topDeck = {
             deckKey: d.topDeckKey,
             deckName: info.name || null,
-            pokemons: info.spriteIds || info.pokemons || null
+            pokemons: resolvedPokemons
           };
         } else {
-          topDeck = { deckKey: d.topDeckKey };
+          topDeck = topPokemons.length
+            ? { deckKey: d.topDeckKey, pokemons: [...topPokemons] }
+            : { deckKey: d.topDeckKey };
         }
+      } else if (topPokemons.length) {
+        topDeck = { pokemons: [...topPokemons] };
       }
-      out.push({ opponentName: d.opponentName || doc.id, counts: d.counts, wr: d.wr, topDeck });
+      out.push({
+        opponentName: d.opponentName || doc.id,
+        counts: d.counts,
+        wr: d.wr,
+        topDeck,
+        topPokemons,
+      });
     }
     res.json(out.sort((a,b)=> (a.opponentName||'').localeCompare(b.opponentName||'')));
   } catch (e){

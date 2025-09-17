@@ -107,12 +107,26 @@ function mergeTopDecks(prev, next) {
 
 function applyTopDeck(opponent, deck) {
   const normalizedDeck = normalizeTopDeck(deck);
+  const deckHints = Array.isArray(normalizedDeck?.pokemons)
+    ? normalizedDeck.pokemons.filter(Boolean)
+    : [];
+  const fallbackHints = Array.isArray(opponent?.topPokemons)
+    ? opponent.topPokemons.filter(Boolean)
+    : [];
+  const resolvedHints = deckHints.length ? deckHints : fallbackHints;
+  const nextDeck = normalizedDeck
+    ? deckHints.length
+      ? normalizedDeck
+      : resolvedHints.length
+        ? { ...normalizedDeck, pokemons: [...resolvedHints] }
+        : normalizedDeck
+    : normalizedDeck;
   return {
     ...opponent,
-    topDeck: normalizedDeck,
-    topDeckKey: normalizedDeck?.deckKey || "",
-    topDeckName: normalizedDeck?.deckName || "",
-    topPokemons: normalizedDeck?.pokemons,
+    topDeck: nextDeck,
+    topDeckKey: nextDeck?.deckKey || "",
+    topDeckName: nextDeck?.deckName || "",
+    topPokemons: resolvedHints.length ? [...resolvedHints] : undefined,
   };
 }
 
