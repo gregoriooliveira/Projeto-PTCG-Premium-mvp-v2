@@ -33,6 +33,60 @@ function safeArray(payload) {
   return [];
 }
 
+function toPokemonSlug(raw) {
+  if (raw == null) return "";
+  let value = null;
+  if (typeof raw === "string" || typeof raw === "number") {
+    value = String(raw);
+  } else if (typeof raw === "object") {
+    value =
+      raw?.slug ??
+      raw?.name ??
+      raw?.id ??
+      raw?.value ??
+      raw?.label ??
+      null;
+  }
+  if (value == null) return "";
+  const slug = String(value)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return /^[a-z0-9-]+$/.test(slug) ? slug : "";
+}
+
+function sanitizePokemonHints(...sources) {
+  const seen = new Set();
+  const result = [];
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const raw of source) {
+      const slug = toPokemonSlug(raw);
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      result.push(slug);
+      if (result.length >= 2) return result;
+    }
+  }
+  return result;
+}
+
+function mergePokemonHints(base, extra) {
+  const result = Array.isArray(base) ? base.slice(0, 2) : [];
+  const seen = new Set(result);
+  for (const slug of extra || []) {
+    if (!slug || seen.has(slug)) continue;
+    result.push(slug);
+    seen.add(slug);
+    if (result.length >= 2) break;
+  }
+  return result.slice(0, 2);
+}
+
 async function tryJson(url) {
   try {
     const res = await fetch(url);
@@ -123,19 +177,34 @@ function normalizeFromHome(homeJson) {
   const rawLogs = safeArray(homeJson.recentLogs || homeJson.logs);
   const tournaments = safeArray(homeJson.recentTournaments || homeJson.tournaments);
   const topDecks = safeArray(homeJson.topDecks || homeJson.decks);
+  const summaryTopDeckRaw = homeJson?.summary?.topDeck || {};
+  const summaryTopDeckHints = sanitizePokemonHints(
+    summaryTopDeckRaw?.pokemons,
+    summaryTopDeckRaw?.pokemonHints
+  );
+  const summaryTopDeckAvatars = Array.isArray(summaryTopDeckRaw?.avatars)
+    ? summaryTopDeckRaw.avatars
+    : [];
 
   // Logs do HOME (usados pelos cards de cima; o widget "Todos os Registros" NÃO usa mais esses)
   const recentLogs = rawLogs
     .filter(r => (r.source || r.origin || "live").toLowerCase().includes("live"))
     .slice(0, 50)
-    .map(r => ({
-      dateISO: toDateISO(r.dateISO || r.date || r.createdAt),
-      playerDeck: r.deck || r.playerDeck || r.myDeck || "-",
-      result: r.result || r.r || "",
-      eventName: r.eventName || r.event || getTournamentNameFromLog(r) || "",
-      tournamentName: getTournamentNameFromLog(r) || "",
-      tournamentId: getTournamentIdFromLog(r),
-    }));
+    .map(r => {
+      const userPokemons = sanitizePokemonHints(r.userPokemons, r.myPokemons, r.pokemons);
+      const opponentPokemons = sanitizePokemonHints(r.opponentPokemons, r.oppPokemons);
+      const base = {
+        dateISO: toDateISO(r.dateISO || r.date || r.createdAt),
+        playerDeck: r.deck || r.playerDeck || r.myDeck || "-",
+        result: r.result || r.r || "",
+        eventName: r.eventName || r.event || getTournamentNameFromLog(r) || "",
+        tournamentName: getTournamentNameFromLog(r) || "",
+        tournamentId: getTournamentIdFromLog(r),
+      };
+      if (userPokemons.length) base.userPokemons = userPokemons;
+      if (opponentPokemons.length) base.opponentPokemons = opponentPokemons;
+      return base;
+    });
 
   // WR geral
   let W = 0,
@@ -158,23 +227,46 @@ function normalizeFromHome(homeJson) {
   const wr = total ? Math.round((W / total) * 1000) / 10 : 0;
 
   // topDeck
-  let topDeck = { deckKey: "-", wr: 0, avatars: [] };
+  let topDeck = {
+    deckKey: summaryTopDeckRaw?.deckKey || summaryTopDeckRaw?.key || summaryTopDeckRaw?.name || "-",
+    wr:
+      summaryTopDeckRaw?.wr != null
+        ? pct(summaryTopDeckRaw.wr)
+        : 0,
+    avatars: summaryTopDeckAvatars,
+    pokemons: summaryTopDeckHints,
+  };
   if (topDecks.length) {
     const d0 = topDecks[0];
     const dCounts = d0.counts || {};
     const tdTot = (dCounts.W || 0) + (dCounts.L || 0) + (dCounts.T || 0);
     const tdWR = d0.wr != null ? pct(d0.wr) : tdTot ? Math.round(((dCounts.W || 0) / tdTot) * 1000) / 10 : 0;
-    topDeck = { deckKey: d0.deckKey || d0.key || d0.name || "-", wr: tdWR, avatars: d0.avatars || [] };
+    const d0Pokemons = sanitizePokemonHints(d0.pokemons, d0.pokemonHints, d0.userPokemons);
+    const avatars = Array.isArray(d0.avatars) && d0.avatars.length ? d0.avatars : summaryTopDeckAvatars;
+    const pokemons = d0Pokemons.length ? d0Pokemons : summaryTopDeckHints;
+    topDeck = {
+      deckKey: d0.deckKey || d0.key || d0.name || topDeck.deckKey || "-",
+      wr: tdWR,
+      avatars,
+      pokemons,
+    };
   }
+
+  const normalizedTopDecks = topDecks.map((d, idx) => {
+    const hints = sanitizePokemonHints(d.pokemons, d.pokemonHints, d.userPokemons);
+    const pokemons = hints.length ? hints : idx === 0 ? summaryTopDeckHints : [];
+    return {
+      deckKey: d.deckKey || d.key || d.name || "-",
+      wr: pct(d.wr ?? 0),
+      counts: d.counts || { W: 0, L: 0, T: 0 },
+      pokemons,
+    };
+  });
 
   return {
     summary: { wr, counts: { total }, topDeck },
     recentLogs,
-    topDecks: topDecks.map(d => ({
-      deckKey: d.deckKey || d.key || d.name || "-",
-      wr: pct(d.wr ?? 0),
-      counts: d.counts || { W: 0, L: 0, T: 0 },
-    })),
+    topDecks: normalizedTopDecks,
     recentTournaments: tournaments.map(t => ({
       dateISO: t.dateISO || t.date || "",
       name: t.name || t.tournamentName || "-",
@@ -189,14 +281,21 @@ function normalizeFromLogs(logsJson) {
   const rows = safeArray(logsJson?.rows || logsJson);
   const liveRows = rows.filter(r => (r.source || r.origin || "live").toLowerCase().includes("live"));
 
-  const recentLogs = liveRows.slice(0, 50).map(r => ({
-    dateISO: toDateISO(r.date || r.createdAt || r.dateISO),
-    playerDeck: r.deck || r.playerDeck || r.myDeck || "-",
-    result: r.result || r.r || "",
-    eventName: r.eventName || r.event || "",
-    tournamentName: getTournamentNameFromLog(r) || "",
-    tournamentId: getTournamentIdFromLog(r),
-  }));
+  const recentLogs = liveRows.slice(0, 50).map(r => {
+    const userPokemons = sanitizePokemonHints(r.userPokemons, r.myPokemons, r.pokemons);
+    const opponentPokemons = sanitizePokemonHints(r.opponentPokemons, r.oppPokemons);
+    const base = {
+      dateISO: toDateISO(r.date || r.createdAt || r.dateISO),
+      playerDeck: r.deck || r.playerDeck || r.myDeck || "-",
+      result: r.result || r.r || "",
+      eventName: r.eventName || r.event || "",
+      tournamentName: getTournamentNameFromLog(r) || "",
+      tournamentId: getTournamentIdFromLog(r),
+    };
+    if (userPokemons.length) base.userPokemons = userPokemons;
+    if (opponentPokemons.length) base.opponentPokemons = opponentPokemons;
+    return base;
+  });
 
   // W/L/T
   let W = 0,
@@ -214,31 +313,38 @@ function normalizeFromLogs(logsJson) {
   // agrega por deck
   const byDeck = new Map();
   for (const r of liveRows) {
-    const name = (r.deck || r.playerDeck || r.myDeck || "-") + "";
+    const deckKey = (r.deck || r.playerDeck || r.myDeck || "-") + "";
     const v = String(r.result || r.r || "").toUpperCase();
-    const agg = byDeck.get(name) || { W: 0, L: 0, T: 0 };
-    if (v === "W") agg.W++;
-    else if (v === "L") agg.L++;
-    else agg.T++;
-    byDeck.set(name, agg);
+    const agg = byDeck.get(deckKey) || { counts: { W: 0, L: 0, T: 0 }, pokemons: [] };
+    if (v === "W") agg.counts.W++;
+    else if (v === "L") agg.counts.L++;
+    else agg.counts.T++;
+    const hints = sanitizePokemonHints(r.userPokemons, r.myPokemons, r.pokemons);
+    if (hints.length) agg.pokemons = mergePokemonHints(agg.pokemons, hints);
+    byDeck.set(deckKey, agg);
   }
   const topDecks = Array.from(byDeck.entries())
-    .map(([deckKey, counts]) => {
+    .map(([deckKey, data]) => {
+      const counts = data.counts;
       const tot = counts.W + counts.L + counts.T;
-      const wr = tot ? Math.round((counts.W / tot) * 1000) / 10 : 0;
-      return { deckKey, counts, wr };
+      const deckWr = tot ? Math.round((counts.W / tot) * 1000) / 10 : 0;
+      return { deckKey, counts, wr: deckWr, pokemons: data.pokemons };
     })
     .sort((a, b) => b.wr - a.wr)
     .slice(0, 5);
+
+  const bestTopDeck = topDecks[0]
+    ? { deckKey: topDecks[0].deckKey, wr: topDecks[0].wr, avatars: [], pokemons: topDecks[0].pokemons }
+    : { deckKey: "-", wr: 0, avatars: [], pokemons: [] };
 
   return {
     summary: {
       wr,
       counts: { total },
-      topDeck: topDecks[0]
-        ? { deckKey: topDecks[0].deckKey, wr: topDecks[0].wr, avatars: [] }
-        : { deckKey: "-", wr: 0, avatars: [] },
+      topDeck: bestTopDeck,
     },
+    recentLogs,
+    topDecks,
   };
 }
 
@@ -311,21 +417,28 @@ export default function TCGLivePage() {
           (await tryJson(`${API}/api/live/logs?source=live&limit=500`));
         const rows = safeArray(logsJson?.rows || logsJson)
           .filter(r => (r.source || r.origin || "live").toLowerCase().includes("live"))
-          .map(r => ({
-            dateISO: toDateISO(r.date || r.createdAt || r.dateISO),
-            playerDeck: r.deck || r.playerDeck || r.myDeck || "-",
-            result: r.result || r.r || "",
-            // torneio
-            eventName:
-              r.event ||
-              r.eventName ||
-              r.tournamentName ||
-              r.tournament ||
-              r.tournament_name ||
-              r.tourneyName ||
-              "",
-            tournamentId: getTournamentIdFromLog(r),
-          }))
+          .map(r => {
+            const userPokemons = sanitizePokemonHints(r.userPokemons, r.myPokemons, r.pokemons);
+            const opponentPokemons = sanitizePokemonHints(r.opponentPokemons, r.oppPokemons);
+            const base = {
+              dateISO: toDateISO(r.date || r.createdAt || r.dateISO),
+              playerDeck: r.deck || r.playerDeck || r.myDeck || "-",
+              result: r.result || r.r || "",
+              // torneio
+              eventName:
+                r.event ||
+                r.eventName ||
+                r.tournamentName ||
+                r.tournament ||
+                r.tournament_name ||
+                r.tourneyName ||
+                "",
+              tournamentId: getTournamentIdFromLog(r),
+            };
+            if (userPokemons.length) base.userPokemons = userPokemons;
+            if (opponentPokemons.length) base.opponentPokemons = opponentPokemons;
+            return base;
+          })
           .sort((a, b) => String(b.dateISO || "").localeCompare(String(a.dateISO || "")));
         if (alive) setLogsForTable(rows);
       } finally {
@@ -351,6 +464,7 @@ export default function TCGLivePage() {
           avatars: (summary?.summary?.topDeck?.avatars || [])
             .slice(0, 2)
             .map(a => (typeof a === "string" && a.startsWith("http") ? a : officialArtworkUrl(a))),
+          pokemons: summary?.summary?.topDeck?.pokemons || [],
         }}
       />
 
@@ -457,7 +571,10 @@ export default function TCGLivePage() {
                         </a>
                       </td>
                       <td>
-                        <DeckLabel deckName={prettyDeckKey(log.playerDeck || log.deckName || "—")} />
+                        <DeckLabel
+                          deckName={prettyDeckKey(log.playerDeck || log.deckName || "—")}
+                          pokemonHints={log.userPokemons}
+                        />
                       </td>
                       <td
                         className={`text-center font-bold ${
@@ -515,7 +632,7 @@ export default function TCGLivePage() {
                     return (
                       <tr key={i}>
                         <td className="py-2">
-                          <DeckLabel deckName={prettyDeckKey(d.deckKey)} />
+                          <DeckLabel deckName={prettyDeckKey(d.deckKey)} pokemonHints={d.pokemons} />
                         </td>
                         <td>
                           <span className="text-emerald-400 font-medium">{counts.W || 0}</span>
@@ -594,7 +711,10 @@ export default function TCGLivePage() {
                         </a>
                       </td>
                       <td>
-                        <DeckLabel deckName={prettyDeckKey(log.playerDeck || log.deckName || "—")} />
+                        <DeckLabel
+                          deckName={prettyDeckKey(log.playerDeck || log.deckName || "—")}
+                          pokemonHints={log.userPokemons}
+                        />
                       </td>
                       <td>
                         {tName ? (
