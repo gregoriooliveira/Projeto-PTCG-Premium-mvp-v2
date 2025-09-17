@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar.jsx";
 import MainContent from "./components/MainContent.jsx";
@@ -13,14 +13,34 @@ export default function App() {
   const novoRegistroRef = useRef();
   const navigate = useNavigate();
 
+  useEffect(() => {
+    window.__ptcgNovoRegistroDialogRef = novoRegistroRef.current;
+    return () => {
+      if (window.__ptcgNovoRegistroDialogRef === novoRegistroRef.current) {
+        delete window.__ptcgNovoRegistroDialogRef;
+      }
+    };
+  });
+
   const handleNewRecord = () => {
     try {
-      const open = window.__ptcgNovoRegistroDialogRef?.open;
+      const dialog = novoRegistroRef.current ?? window.__ptcgNovoRegistroDialogRef;
+      const open = dialog?.open;
       if (typeof open === "function") {
         try {
           const raw = window.location.hash || "";
-          const segs = raw.split("?")[0].replace(/^#/, "").split("/").filter(Boolean);
-          const dia = segs[0] === "tcg-fisico" && segs[1] === "eventos" && segs[2] === "data" && segs[3] ? segs[3] : undefined;
+          const segs = raw
+            .split("?")[0]
+            .replace(/^#/, "")
+            .split("/")
+            .filter(Boolean);
+          const dia =
+            segs[0] === "tcg-fisico" &&
+            segs[1] === "eventos" &&
+            segs[2] === "data" &&
+            segs[3]
+              ? segs[3]
+              : undefined;
           open(dia ? { dia } : undefined);
         } catch {
           open();
