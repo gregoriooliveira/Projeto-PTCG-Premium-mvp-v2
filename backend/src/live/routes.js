@@ -51,6 +51,18 @@ function eventCounts(ev = {}){
   );
 }
 
+function normalizePokemonHints(...sources){
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    const normalized = source
+      .map(p => (typeof p === "string" ? p.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 2);
+    if (normalized.length) return normalized;
+  }
+  return null;
+}
+
 /** Create an event (log) */
 r.post("/events", authMiddleware, async (req, res) => {
   const body = req.body || {};
@@ -305,20 +317,22 @@ r.get("/days/:date", async (req, res) => {
     .limit(200)
     .get();
   const events = snap.docs.map(d => {
-  const ev = d.data();
-  return {
-    eventId: ev.eventId,
-    createdAt: ev.createdAt || null,
-    time: ev.time || null,
-    result: ev.result ?? null,
-    playerDeck: ev.deckName ?? ev.deck ?? null,
-    opponentDeck: ev.opponentDeck ?? null,
-    opponent: ev.opponent || ev.opponentName || ev.opp || null,
-    tournamentId: ev.tournamentId ?? null,
-    tournamentName: ev.tourneyName || ev.limitlessId || null,
-    round: ev.round || null
-  };
-});
+    const ev = d.data();
+    return {
+      eventId: ev.eventId,
+      createdAt: ev.createdAt || null,
+      time: ev.time || null,
+      result: ev.result ?? null,
+      playerDeck: ev.deckName ?? ev.deck ?? null,
+      opponentDeck: ev.opponentDeck ?? null,
+      opponent: ev.opponent || ev.opponentName || ev.opp || null,
+      tournamentId: ev.tournamentId ?? null,
+      tournamentName: ev.tourneyName || ev.limitlessId || null,
+      round: ev.round || null,
+      userPokemons: normalizePokemonHints(ev.pokemons, ev.userPokemons),
+      opponentPokemons: normalizePokemonHints(ev.opponentPokemons, ev.oppPokemons)
+    };
+  });
   let counts = {W:0,L:0,T:0}; for (const e of events) counts = countsAdd(counts, countsOfResult(e.result));
   const wr = wrPercent(counts);
   res.json({ date, summary:{ counts, wr }, events });
