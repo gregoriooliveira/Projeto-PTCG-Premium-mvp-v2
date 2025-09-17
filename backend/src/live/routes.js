@@ -90,6 +90,15 @@ function normalizePokemonHints(...sources){
   return normalized.length ? normalized : null;
 }
 
+function sanitizePokemonHintsList(source) {
+  const arr = Array.isArray(source) ? source : source != null ? [source] : [];
+  const normalized = normalizePokemonHints(arr);
+  if (!Array.isArray(normalized)) return [];
+  return normalized
+    .map((slug) => (typeof slug === "string" ? slug.trim() : String(slug || "").trim()))
+    .filter(Boolean);
+}
+
 /** Create an event (log) */
 r.post("/events", authMiddleware, async (req, res) => {
   const body = req.body || {};
@@ -468,21 +477,42 @@ r.get("/opponents-agg", async (req, res) => {
     const out = [];
     for (const doc of snap.docs){
       const d = doc.data() || {};
+      const topPokemons = sanitizePokemonHintsList(d.topPokemons);
       let topDeck = null;
       if (d.topDeckKey){
         const deckDoc = await db.collection("decks").doc(safeDocId(d.topDeckKey)).get();
         if (deckDoc.exists){
           const info = deckDoc.data() || {};
+          const deckPokemons = Array.isArray(info.spriteIds) && info.spriteIds.length
+            ? info.spriteIds
+            : Array.isArray(info.pokemons) && info.pokemons.length
+              ? info.pokemons
+              : null;
+          const resolvedPokemons = deckPokemons && deckPokemons.length
+            ? deckPokemons
+            : topPokemons.length
+              ? [...topPokemons]
+              : null;
           topDeck = {
             deckKey: d.topDeckKey,
             deckName: info.name || null,
-            pokemons: info.spriteIds || info.pokemons || null
+            pokemons: resolvedPokemons
           };
         } else {
-          topDeck = { deckKey: d.topDeckKey };
+          topDeck = topPokemons.length
+            ? { deckKey: d.topDeckKey, pokemons: [...topPokemons] }
+            : { deckKey: d.topDeckKey };
         }
+      } else if (topPokemons.length) {
+        topDeck = { pokemons: [...topPokemons] };
       }
-      out.push({ opponentName: d.opponentName || doc.id, counts: d.counts, wr: d.wr, topDeck });
+      out.push({
+        opponentName: d.opponentName || doc.id,
+        counts: d.counts,
+        wr: d.wr,
+        topDeck,
+        topPokemons,
+      });
     }
     res.json(out.sort((a,b)=> (a.opponentName||'').localeCompare(b.opponentName||'')));
   } catch (e){
