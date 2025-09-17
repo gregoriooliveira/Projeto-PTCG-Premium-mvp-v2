@@ -18,7 +18,13 @@ vi.mock("lucide-react", () => ({
   Upload: () => null,
 }));
 
-import { aggregatePokemonHintsForDeck, countsFrom, topDeckByWinRate, winRate } from "./PhysicalPageV2.jsx";
+import {
+  aggregatePokemonHintsForDeck,
+  countsFrom,
+  deriveTopDeckHints,
+  topDeckByWinRate,
+  winRate,
+} from "./PhysicalPageV2.jsx";
 
 describe("PhysicalPageV2 helper utilities", () => {
   it("countsFrom normaliza tokens variados de resultado", () => {
@@ -79,5 +85,22 @@ describe("PhysicalPageV2 helper utilities", () => {
   it("aggregatePokemonHintsForDeck retorna vazio quando não encontra correspondências", () => {
     expect(aggregatePokemonHintsForDeck([], "Gamma")).toEqual([]);
     expect(aggregatePokemonHintsForDeck([{ playerDeck: "Alpha", userPokemons: ["lugia"] }], "Gamma")).toEqual([]);
+  });
+
+  it("deriveTopDeckHints prioriza agregação manual em relação ao resumo", () => {
+    const matches = [
+      { playerDeck: "Alpha", userPokemons: ["gardevoir"] },
+      { playerDeck: "Alpha", userPokemons: ["zacian"] },
+    ];
+
+    const summaryTopDeck = { deckKey: "Alpha", avatars: ["lugia"] };
+
+    const hints = deriveTopDeckHints({
+      matches,
+      summaryTopDeck,
+      deckKeyCandidates: ["Alpha", "alpha", "—"],
+    });
+
+    expect(hints).toEqual(["gardevoir", "zacian"]);
   });
 });
