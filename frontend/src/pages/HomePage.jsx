@@ -153,6 +153,25 @@ const Last5DaysWidget = ({ home }) => {
     return null;
   };
 
+  const formatLogDate = (dateISO) => {
+    if (typeof dateISO !== "string") return "—";
+    const trimmed = dateISO.trim();
+    if (!trimmed) return "—";
+
+    const simpleMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (simpleMatch) {
+      const [, year, month, day] = simpleMatch;
+      return `${day}/${month}/${year}`;
+    }
+
+    const parsedDate = new Date(trimmed);
+    if (!Number.isNaN(parsedDate.getTime())) {
+      return parsedDate.toLocaleDateString("pt-BR");
+    }
+
+    return "—";
+  };
+
   return (
     <WidgetCard title="Últimos Registros" icon={CalendarDays} className="col-span-12 md:col-span-6">
       <div className="grid grid-cols-12 font-mono text-xs text-zinc-400 mb-2">
@@ -166,7 +185,7 @@ const Last5DaysWidget = ({ home }) => {
         {logs.map((log) => {
           const href = buildLogHref(log);
           const name = typeof log?.name === "string" && log.name.trim().length > 0 ? log.name : "—";
-          const date = typeof log?.dateISO === "string" && log.dateISO.trim().length > 0 ? log.dateISO : "—";
+          const date = formatLogDate(log?.dateISO);
           const key = log.eventId || [log.dateISO, log.name].filter(Boolean).join("-") || date;
           const counts = getCountsForLog(log);
 
