@@ -103,9 +103,10 @@ async function listLiveDecks() {
 }
 
 async function listLogsByDeck(deckKey) {
-  const url = `${API}/api/live/logs?deck=${encodeURIComponent(deckKey)}&limit=1000`;
+  const normalizedKey = String(deckKey || "").toLowerCase();
+  const url = `${API}/api/live/decks/${encodeURIComponent(normalizedKey)}/logs`;
   const j = await tryJson(url);
-  return safeArray(j?.rows || j).filter(r =>
+  return safeArray(j).filter(r =>
     (r.source || r.origin || "live").toLowerCase().includes("live")
   );
 }
