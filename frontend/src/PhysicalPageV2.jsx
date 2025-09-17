@@ -54,6 +54,45 @@ export function topDeckByWinRate(list = []) {
   return best;
 }
 
+const MAX_LOG_PAGE_SIZE = 10000;
+const DEFAULT_LOG_PAGE_SIZE = 1000;
+const MAX_LOG_REQUESTS = 200;
+
+const clampPageSize = (value, fallback = DEFAULT_LOG_PAGE_SIZE) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  const bounded = Math.floor(numeric);
+  if (!Number.isFinite(bounded) || bounded <= 0) return fallback;
+  return Math.min(bounded, MAX_LOG_PAGE_SIZE);
+};
+
+async function fetchAllPhysicalLogs(options = {}) {
+  const { pageSize, ...rest } = options || {};
+  const limit = clampPageSize(pageSize);
+  const aggregatedRows = [];
+  let offset = 0;
+  let total = null;
+  let iterations = 0;
+
+  while (iterations < MAX_LOG_REQUESTS) {
+    iterations += 1;
+    const payload = await getPhysicalLogs({ ...rest, limit, offset });
+    const chunk = Array.isArray(payload?.rows) ? payload.rows : [];
+    if (chunk.length) aggregatedRows.push(...chunk);
+    if (typeof payload?.total === "number" && payload.total >= 0) {
+      total = payload.total;
+    }
+    offset += chunk.length;
+    const expectedTotal = typeof total === "number" && total >= 0 ? total : null;
+    if (expectedTotal != null && offset >= expectedTotal) break;
+    if (chunk.length < limit) break;
+  }
+
+  const ensuredTotal = typeof total === "number" && total >= 0 ? total : aggregatedRows.length;
+
+  return { rows: aggregatedRows, total: ensuredTotal };
+}
+
 const FALLBACK_TOP_DECK_HINTS = ["gardevoir", "mewtwo"];
 
 const prettifyDeckName = (value = "") => {
@@ -561,7 +600,7 @@ export default function PhysicalPageV2({ manualMatches }) {
     try {
       const [summaryResult, logsResult] = await Promise.allSettled([
         getPhysicalSummary({ limitDays: 30 }),
-        getPhysicalLogs({ limit: 500 }),
+        fetchAllPhysicalLogs({ pageSize: 1000 }),
       ]);
 
       if (!isMountedRef.current) return;
