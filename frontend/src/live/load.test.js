@@ -1,30 +1,64 @@
-import fetch from 'node-fetch';
+import { describe, expect, it, vi } from 'vitest';
+import { runLoadTest } from './loadRunner.js';
 
-const target = process.env.LOAD_TEST_URL || 'http://localhost:3000/live/events';
-const connections = Number(process.env.LOAD_TEST_CONNECTIONS || 10);
-const requests = Number(process.env.LOAD_TEST_REQUESTS || 100);
+describe('load test runner', () => {
+  it('sends the configured number of requests and logs the summary', async () => {
+    const fetchMock = vi.fn(async () => ({ text: async () => {} }));
+    const logMock = vi.fn();
+    const errorMock = vi.fn();
 
-async function worker(id) {
-  for (let i = id; i < requests; i += connections) {
+    const nowSpy = vi
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(100)
+      .mockReturnValueOnce(250);
+
     try {
-      const res = await fetch(target);
-      await res.text();
-    } catch (e) {
-      console.error(`worker ${id} error`, e.message);
+      const result = await runLoadTest({
+        target: 'http://example.test',
+        connections: 2,
+        requests: 5,
+        fetchImpl: fetchMock,
+        logger: { log: logMock, error: errorMock }
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+      expect(errorMock).not.toHaveBeenCalled();
+      expect(logMock).toHaveBeenCalledWith('Completed 5 requests in 150ms');
+      expect(result).toEqual({ duration: 150, requests: 5, connections: 2 });
+    } finally {
+      nowSpy.mockRestore();
     }
-  }
-}
+  });
 
-async function run() {
-  const start = Date.now();
-  const jobs = [];
-  for (let i = 0; i < connections; i++) jobs.push(worker(i));
-  await Promise.all(jobs);
-  const dur = Date.now() - start;
-  console.log(`Completed ${requests} requests in ${dur}ms`);
-}
+  it('logs failures without aborting the remaining requests', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValue({ text: async () => {} });
+    const logMock = vi.fn();
+    const errorMock = vi.fn();
 
-run().catch(e => {
-  console.error('load test failed', e);
-  process.exit(1);
+    const nowSpy = vi
+      .spyOn(Date, 'now')
+      .mockReturnValueOnce(20)
+      .mockReturnValueOnce(60);
+
+    try {
+      const result = await runLoadTest({
+        target: 'http://example.test',
+        connections: 1,
+        requests: 2,
+        fetchImpl: fetchMock,
+        logger: { log: logMock, error: errorMock }
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(errorMock).toHaveBeenCalledTimes(1);
+      expect(errorMock).toHaveBeenCalledWith('worker 0 error', 'boom');
+      expect(logMock).toHaveBeenCalledWith('Completed 2 requests in 40ms');
+      expect(result.requests).toBe(2);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
 });
