@@ -2,34 +2,23 @@
 function openNovoRegistroDialog(){ try { window.__ptcgNovoRegistroDialogRef?.open(); } catch(e){ console.warn('NovoRegistroDialog ref ausente', e);} }
 
 import NovoRegistroDialog from "./components/NovoRegistroDialog.jsx";
-import React, { useRef,  useMemo, useState, useEffect } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import ResumoGeralWidget from "./components/widgets/ResumoGeralWidget.jsx";
 import { BarChart3, CalendarDays, Trophy, Users, Upload } from "lucide-react";
 import DeckLabel from "./components/DeckLabel.jsx";
 import { getEvent } from "./eventsRepo.js";
+import { getPhysicalLogs, getPhysicalSummary, normalizeDeckKey } from "./services/api.js";
 
 /** Helpers locais para contagem e top deck */
-function wlCounts(list = []) {
-  let wins = 0, losses = 0, ties = 0;
-  for (const m of list) {
-    if (m?.result === "win") wins++;
-    else if (m?.result === "loss") losses++;
-    else if (m?.result === "tie") ties++;
-  }
-  return { wins, losses, ties, total: wins + losses + ties };
-}
-function winRateFromCounts({ wins = 0, total = 0 } = {}) {
-  if (!total) return 0;
-  return Math.round((wins / total) * 1000) / 10; // 1 casa
-}
 function topDeckByWinRate(list = []) {
   const map = new Map();
   for (const m of list) {
     const key = m?.playerDeck || "—";
     const rec = map.get(key) || { wins:0, total:0 };
     rec.total += 1;
-    if (m?.result === "win") rec.wins += 1;
+    const token = typeof m?.result === "string" ? m.result.trim().toLowerCase() : "";
+    if (token === "win" || token === "w") rec.wins += 1;
     map.set(key, rec);
   }
   let best = null, name = "—";
@@ -43,6 +32,134 @@ function topDeckByWinRate(list = []) {
   if (!best) return null;
   return { deckKey: name, winRate: Math.round(best.wr*1000)/10 };
 }
+
+const FALLBACK_TOP_DECK_HINTS = ["gardevoir", "mewtwo"];
+
+const prettifyDeckName = (value = "") => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  return raw
+    .split(/[-_/]+|\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+};
+
+const normalizeResultToken = (value) => {
+  if (value == null) return null;
+  const token = String(value).trim().toUpperCase();
+  if (!token) return null;
+  if (token === "W" || token.startsWith("WIN") || token === "V") return "W";
+  if (token === "L" || token.startsWith("LOS") || token === "D") return "L";
+  if (token === "T" || token.startsWith("TIE") || token === "E" || token.startsWith("EMP")) return "T";
+  return null;
+};
+
+const resultFromCounts = (counts = {}) => {
+  const w = Number(counts?.W || 0);
+  const l = Number(counts?.L || 0);
+  const t = Number(counts?.T || 0);
+  if (w > l && w >= t && w > 0) return "W";
+  if (l > w && l >= t && l > 0) return "L";
+  if (t > 0 && t >= w && t >= l) return "T";
+  if (w > 0 && l === 0 && t === 0) return "W";
+  if (l > 0 && w === 0 && t === 0) return "L";
+  if (t > 0 && w === 0 && l === 0) return "T";
+  return null;
+};
+
+const parseDateValue = (value) => {
+  if (value instanceof Date) {
+    const ts = value.getTime();
+    return Number.isNaN(ts) ? null : ts;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (value == null) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const numeric = Number(str);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(str);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const normalizeEventTypeKey = (value) => {
+  if (value == null) return null;
+  const token = String(value).trim().toLowerCase();
+  if (!token) return null;
+  if (token.includes("mundial") || token.includes("world")) return "worlds";
+  if (token.includes("internacional") || token.includes("international")) return "international";
+  if (token.includes("regional")) return "regional";
+  if (token.includes("special")) return "special";
+  if (token.includes("cup") || token.includes("copa")) return "cup";
+  if (token.includes("challenge") || token === "clp" || token.includes("clp")) return "challenge";
+  if (token.includes("liga") || token.includes("league") || token.includes("amistos") || token.includes("amig") || token.includes("treino"))
+    return "local";
+  return null;
+};
+
+const ensurePokemonList = (list) => {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const entry of list) {
+    let candidate = null;
+    if (typeof entry === "string") candidate = entry;
+    else if (entry && typeof entry === "object") candidate = entry.slug || entry.name || entry.id || null;
+    if (!candidate) continue;
+    const value = String(candidate).trim();
+    if (!value) continue;
+    if (!out.includes(value)) out.push(value);
+    if (out.length >= 4) break;
+  }
+  return out;
+};
+
+const selectStoreName = (detail = {}, row = {}) => {
+  const raw =
+    detail.storeOrCity ||
+    detail.local ||
+    detail.storeName ||
+    detail.store ||
+    row.storeName ||
+    row.storeOrCity ||
+    row.store ||
+    "";
+  const value = String(raw || "").trim();
+  return value || null;
+};
+
+const mapLogRowToMatch = (row = {}, detail = {}) => {
+  const eventId = row?.eventId || row?.id || detail?.eventId || detail?.id || null;
+  if (!eventId) return null;
+  const resultToken =
+    normalizeResultToken(row?.result) ||
+    resultFromCounts(row?.counts) ||
+    normalizeResultToken(detail?.result) ||
+    resultFromCounts(detail?.counts) ||
+    null;
+  const playerDeck = row?.playerDeck || row?.deck || detail?.deckName || detail?.deck || null;
+  const date =
+    parseDateValue(row?.date) ||
+    parseDateValue(row?.createdAt) ||
+    parseDateValue(row?.ts) ||
+    parseDateValue(detail?.date) ||
+    parseDateValue(detail?.createdAt) ||
+    Date.now();
+
+  return {
+    id: eventId,
+    eventId,
+    date,
+    result: resultToken,
+    eventType: normalizeEventTypeKey(detail?.type || detail?.tipo || row?.eventType || row?.type),
+    playerDeck: playerDeck ? String(playerDeck).trim() : "",
+    storeName: selectStoreName(detail, row),
+    userPokemons: ensurePokemonList(row?.userPokemons || row?.pokemons || detail?.pokemons || detail?.userPokemons),
+    opponentPokemons: ensurePokemonList(row?.opponentPokemons || detail?.opponentPokemons),
+  };
+};
 
 
 
@@ -420,8 +537,100 @@ function mockManualMatches(n=48){
 }
 
 /**************************** Página ****************************/
-export default function PhysicalPageV2({ manualMatches }){
+export default function PhysicalPageV2({ manualMatches }) {
   const [novoOpen, setNovoOpen] = useState(false);
+  const isMountedRef = useRef(true);
+  const [physicalMatches, setPhysicalMatches] = useState(Array.isArray(manualMatches) ? manualMatches : []);
+  const [summaryData, setSummaryData] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const [summaryResult, logsResult] = await Promise.allSettled([
+        getPhysicalSummary({ limitDays: 30 }),
+        getPhysicalLogs({ limit: 500 }),
+      ]);
+
+      if (!isMountedRef.current) return;
+
+      if (summaryResult.status === "fulfilled") {
+        setSummaryData(summaryResult.value);
+      } else {
+        setSummaryData(null);
+        if (summaryResult.reason) {
+          console.warn("[PhysicalPageV2] falha ao carregar resumo físico", summaryResult.reason);
+        }
+      }
+
+      if (logsResult.status !== "fulfilled") {
+        throw logsResult.reason || new Error("physical_logs_failed");
+      }
+
+      const rows = Array.isArray(logsResult.value?.rows) ? logsResult.value.rows : [];
+      const uniqueIds = Array.from(
+        new Set(
+          rows
+            .map((row) => row?.eventId || row?.id || null)
+            .filter(Boolean),
+        ),
+      );
+
+      const detailsMap = new Map();
+      const CHUNK_SIZE = 8;
+      for (let i = 0; i < uniqueIds.length; i += CHUNK_SIZE) {
+        const chunk = uniqueIds.slice(i, i + CHUNK_SIZE);
+        const chunkResults = await Promise.all(
+          chunk.map(async (eventId) => {
+            try {
+              const detail = await getEvent(eventId);
+              return [eventId, detail];
+            } catch (error) {
+              console.warn(`[PhysicalPageV2] falha ao carregar evento ${eventId}`, error);
+              return [eventId, null];
+            }
+          }),
+        );
+        if (!isMountedRef.current) return;
+        for (const [eventId, detail] of chunkResults) {
+          detailsMap.set(eventId, detail);
+        }
+      }
+
+      const mappedMatches = rows
+        .map((row) => mapLogRowToMatch(row, detailsMap.get(row?.eventId || row?.id) || {}))
+        .filter(Boolean)
+        .map((entry) => ({
+          ...entry,
+          result: entry.result || null,
+          userPokemons: Array.isArray(entry.userPokemons) ? entry.userPokemons : [],
+        }));
+
+      mappedMatches.sort((a, b) => (b.date || 0) - (a.date || 0));
+
+      if (!isMountedRef.current) return;
+      setPhysicalMatches(mappedMatches);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      console.error("[PhysicalPageV2] falha ao carregar dados físicos", err);
+      setLoadError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    fetchData();
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [fetchData]);
+
   // Abre o "Novo Registro" automaticamente se existir a intenção armazenada
   useEffect(() => {
     try {
@@ -450,26 +659,109 @@ export default function PhysicalPageV2({ manualMatches }){
 
   if (typeof window !== 'undefined') { window.__ptcgSetNovoOpen = setNovoOpen; }
 
+  const manual = physicalMatches;
+  const manualCounts = useMemo(() => countsFrom(manual), [manual]);
+  const manualWinRate = useMemo(() => winRate(manualCounts), [manualCounts]);
+  const summaryCounts = summaryData?.summary?.counts;
+  const summaryWinRate = typeof summaryData?.summary?.wr === "number" ? summaryData.summary.wr : null;
+  const totalMatches = summaryCounts?.total ?? manualCounts.total ?? manual.length;
+  const displayWinRate = summaryWinRate ?? manualWinRate;
 
-  const manual = Array.isArray(manualMatches) ? manualMatches : [];
+  const topDeckComputed = useMemo(() => topDeckByWinRate(manual), [manual]);
+  const summaryTopDeck = summaryData?.summary?.topDeck || null;
+  const summaryDeckKey = summaryTopDeck?.deckKey ? normalizeDeckKey(summaryTopDeck.deckKey) : null;
+
+  let topDeckName = topDeckComputed?.deckKey || "";
+  if (!topDeckName && summaryDeckKey) {
+    const match = manual.find((entry) => normalizeDeckKey(entry?.playerDeck || "") === summaryDeckKey);
+    if (match?.playerDeck) topDeckName = match.playerDeck;
+  }
+  if (!topDeckName && summaryTopDeck?.deckKey) {
+    topDeckName = prettifyDeckName(summaryTopDeck.deckKey);
+  }
+  if (!topDeckName) topDeckName = "—";
+
+  const topDeckWinRate = summaryTopDeck?.wr ?? topDeckComputed?.winRate ?? 0;
+
+  let topDeckHints =
+    Array.isArray(summaryTopDeck?.avatars) && summaryTopDeck.avatars.length ? summaryTopDeck.avatars : [];
+  if (!topDeckHints.length && topDeckName && topDeckName !== "—") {
+    const normalizedDeckName = normalizeDeckKey(topDeckName);
+    const match = manual.find(
+      (entry) =>
+        normalizeDeckKey(entry?.playerDeck || "") === normalizedDeckName &&
+        Array.isArray(entry?.userPokemons) &&
+        entry.userPokemons.length,
+    );
+    if (match?.userPokemons?.length) topDeckHints = match.userPokemons.slice(0, 4);
+  }
+  if (!topDeckHints.length) topDeckHints = FALLBACK_TOP_DECK_HINTS;
+
   const onNew = () => window.__ptcgNovoRegistroDialogRef?.open();
+
+  if (isLoading && manual.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-neutral-950 to-black text-zinc-200 p-4">
+        <div className="mx-auto max-w-[1600px]">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 px-6 py-12 text-center text-sm text-zinc-300">
+            Carregando dados do TCG Físico...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError && manual.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-neutral-950 to-black text-zinc-200 p-4">
+        <div className="mx-auto max-w-[1600px]">
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-6 py-12 text-center text-sm text-rose-100 space-y-4">
+            <div>Não foi possível carregar os dados físicos.</div>
+            <button
+              type="button"
+              onClick={fetchData}
+              className="inline-flex items-center justify-center rounded-lg border border-rose-400/60 px-3 py-1 text-xs font-medium text-rose-100 hover:bg-rose-500/20"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const errorBanner = loadError ? (
+    <div className="col-span-12">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        <span>Não foi possível atualizar os dados mais recentes.</span>
+        <button
+          type="button"
+          onClick={fetchData}
+          className="rounded-lg border border-amber-400/60 px-3 py-1 text-xs font-medium text-amber-100 hover:bg-amber-500/20"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-neutral-950 to-black text-zinc-200 p-4">
       <div className="mx-auto max-w-[1600px] grid grid-cols-12 gap-3 md:gap-4">
+        {errorBanner}
         <div className="col-span-12 flex items-center justify-end mb-1">
-  <button onClick={onNew} className="text-sm px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700" aria-label="Novo Registro" title="Novo Registro">+ Novo Registro</button>
-</div>
+          <button onClick={onNew} className="text-sm px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700" aria-label="Novo Registro" title="Novo Registro">+ Novo Registro</button>
+        </div>
 
-<div className="col-span-12 mb-4 md:mb-6">
-  <ResumoGeralWidget
-  title="Resumo Geral (Físico)"
-  variant="fisico"
-  winRate={{ value: winRateFromCounts(wlCounts(manual)), label: "WIN RATE (SOMENTE FÍSICO)" }}
-  center={{ number: manual?.length || 0, subtitle: "Registros realizados" }}
-  topDeck={{ deckName: (topDeckByWinRate(manual)?.deckKey) || "—", winRate: (topDeckByWinRate(manual)?.winRate) || 0, avatars: ["/assets/icons/gardevoir.png", "/assets/icons/mewtwo.png"], href: "#/tcg-fisico/decks" }}
-/>
-</div>
+        <div className="col-span-12 mb-4 md:mb-6">
+          <ResumoGeralWidget
+            title="Resumo Geral (Físico)"
+            variant="fisico"
+            winRate={{ value: displayWinRate, label: "WIN RATE (SOMENTE FÍSICO)" }}
+            center={{ number: totalMatches, subtitle: "Registros realizados" }}
+            topDeck={{ deckName: topDeckName, winRate: topDeckWinRate, pokemons: topDeckHints, href: "#/tcg-fisico/decks" }}
+          />
+        </div>
 
         <NewRecordWidget />
         <TournamentsSummaryWidget manualMatches={manual} />
@@ -478,18 +770,18 @@ export default function PhysicalPageV2({ manualMatches }){
         <AllPhysicalEntriesPagedWidget manualMatches={manual} />
       </div>
       <NovoRegistroDialog
-		ref={(node) => {
-			window.__ptcgNovoRegistroDialogRef = node;
-		}}
-		// As duas props abaixo são opcionais. Se você já adicionou a dupla
-		// [novoOpen, setNovoOpen] e quer controlar por estado externo, passe-as.
-		// Caso contrário, remova open/onOpenChange e deixe o componente no modo não-controlado.
-		// open={novoOpen}
-		// onOpenChange={setNovoOpen}
-		renderTrigger={false}
-	/>
+        ref={(node) => {
+          window.__ptcgNovoRegistroDialogRef = node;
+        }}
+        // As duas props abaixo são opcionais. Se você já adicionou a dupla
+        // [novoOpen, setNovoOpen] e quer controlar por estado externo, passe-as.
+        // Caso contrário, remova open/onOpenChange e deixe o componente no modo não-controlado.
+        // open={novoOpen}
+        // onOpenChange={setNovoOpen}
+        renderTrigger={false}
+      />
       <EventDetailOverlay />
-</div>
+    </div>
   );
 }
 

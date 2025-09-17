@@ -71,6 +71,22 @@ const unwrapOpponentsAgg = (payload) => {
 export const getLiveOpponentsAgg = () => api(`/api/live/opponents-agg`);
 export const getPhysicalOpponentsAgg = () => api(`/api/physical/opponents-agg`);
 
+export const getPhysicalSummary = ({ limitDays } = {}) => {
+  const params = new URLSearchParams();
+  if (limitDays != null) params.set('limitDays', limitDays);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return api(`/api/physical/summary${query}`);
+};
+
+export const getPhysicalLogs = ({ limit = 200, offset = 0, opponent } = {}) => {
+  const params = new URLSearchParams();
+  if (limit != null) params.set('limit', limit);
+  if (offset) params.set('offset', offset);
+  if (opponent) params.set('opponent', opponent);
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return api(`/api/physical/logs${query}`);
+};
+
 export const getOpponentsAgg = async () => {
   const [live, physical] = await Promise.allSettled([
     getLiveOpponentsAgg(),
