@@ -11,26 +11,47 @@ import { getEvent } from "./eventsRepo.js";
 import { getPhysicalLogs, getPhysicalSummary, normalizeDeckKey } from "./services/api.js";
 
 /** Helpers locais para contagem e top deck */
-function topDeckByWinRate(list = []) {
-  const map = new Map();
-  for (const m of list) {
-    const key = m?.playerDeck || "—";
-    const rec = map.get(key) || { wins:0, total:0 };
-    rec.total += 1;
-    const token = typeof m?.result === "string" ? m.result.trim().toLowerCase() : "";
-    if (token === "win" || token === "w") rec.wins += 1;
-    map.set(key, rec);
+function wlCounts(matches = []) {
+  if (!Array.isArray(matches) || matches.length === 0) {
+    return { W: 0, L: 0, T: 0, total: 0 };
   }
-  let best = null, name = "—";
-  for (const [k,v] of map.entries()) {
-    const wr = v.total ? v.wins / v.total : 0;
-    if (!best || wr > best.wr || (wr === best.wr && v.total > best.total)) {
-      best = { wr, total: v.total };
-      name = k;
+  let W = 0;
+  let L = 0;
+  let T = 0;
+  for (const match of matches) {
+    const token = normalizeResultToken(match?.result);
+    if (token === "W") W += 1;
+    else if (token === "L") L += 1;
+    else if (token === "T") T += 1;
+  }
+  return { W, L, T, total: W + L + T };
+}
+
+function winRateFromCounts({ W = 0, L = 0, T = 0 } = {}) {
+  const denom = W + L + T;
+  return denom === 0 ? 0 : Math.round((W / denom) * 1000) / 10;
+}
+
+export function topDeckByWinRate(list = []) {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const map = new Map();
+  for (const match of list) {
+    const raw = match?.playerDeck;
+    const deckKey = typeof raw === "string" ? raw.trim() : "";
+    const key = deckKey || "—";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(match);
+  }
+  let best = null;
+  for (const [deckKey, games] of map.entries()) {
+    const counts = wlCounts(games);
+    if (counts.total === 0) continue;
+    const wr = winRateFromCounts(counts);
+    if (!best || wr > best.winRate || (wr === best.winRate && counts.total > best.games)) {
+      best = { deckKey, winRate: wr, games: counts.total };
     }
   }
-  if (!best) return null;
-  return { deckKey: name, winRate: Math.round(best.wr*1000)/10 };
+  return best;
 }
 
 const FALLBACK_TOP_DECK_HINTS = ["gardevoir", "mewtwo"];
@@ -45,7 +66,7 @@ const prettifyDeckName = (value = "") => {
     .join(" ");
 };
 
-const normalizeResultToken = (value) => {
+function normalizeResultToken(value) {
   if (value == null) return null;
   const token = String(value).trim().toUpperCase();
   if (!token) return null;
@@ -53,7 +74,7 @@ const normalizeResultToken = (value) => {
   if (token === "L" || token.startsWith("LOS") || token === "D") return "L";
   if (token === "T" || token.startsWith("TIE") || token === "E" || token.startsWith("EMP")) return "T";
   return null;
-};
+}
 
 const resultFromCounts = (counts = {}) => {
   const w = Number(counts?.W || 0);
@@ -270,20 +291,9 @@ export const labelFromKind = (k) => (
   }[k] || "—"
 );
 
-export const countsFrom = (rows = []) => {
-  let W = 0, L = 0, T = 0;
-  for (const r of rows) {
-    if (r.result === "W") W++;
-    else if (r.result === "L") L++;
-    else if (r.result === "T") T++;
-  }
-  return { W, L, T, total: W + L + T };
-};
+export const countsFrom = (rows = []) => wlCounts(rows);
 
-export const winRate = ({ W = 0, L = 0, T = 0 } = {}) => {
-  const n = W + L + T;
-  return n === 0 ? 0 : Math.round((W / n) * 1000) / 10; // 1 casa decimal
-};
+export const winRate = (counts = {}) => winRateFromCounts(counts);
 
 export const clampPage = (p, totalPages) => {
   const n = Number.isFinite(p) ? p : 1;
