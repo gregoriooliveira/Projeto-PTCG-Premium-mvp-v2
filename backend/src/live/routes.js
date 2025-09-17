@@ -240,12 +240,39 @@ r.get("/summary", async (req, res) => {
     .limit(5)
     .get();
   const topOpponents = oppSnap.docs.map(d => {
-    const x = d.data();
+    const x = d.data() || {};
+    const counts = x.counts || {};
+    const inferredTotal =
+      typeof x.total === "number"
+        ? x.total
+        : typeof x.games === "number"
+          ? x.games
+          : (counts.W || 0) + (counts.L || 0) + (counts.T || 0);
+    const rawTopPokemons = Array.isArray(x.topPokemons) ? x.topPokemons : [];
+    const normalizedPokemons = rawTopPokemons
+      .map(p => (typeof p === "string" ? p.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 2);
+    const rawTopDeckKey = typeof x.topDeckKey === "string" ? x.topDeckKey.trim() : "";
+    const rawTopDeckName = typeof x.topDeckName === "string" ? x.topDeckName.trim() : "";
+    const hasDeckInfo = !!(rawTopDeckKey || rawTopDeckName || normalizedPokemons.length);
+    const topDeck = hasDeckInfo
+      ? {
+          deckKey: rawTopDeckKey || null,
+          deckName: rawTopDeckName || null,
+          pokemons: normalizedPokemons.length ? normalizedPokemons : undefined,
+        }
+      : null;
     return {
-      opponentName: x.opponentName,
-      counts: x.counts,
+      opponentName: x.opponentName || x.opponent || d.id,
+      counts,
       wr: x.wr,
-      topDeck: x.topDeckKey ? { deckKey: x.topDeckKey } : null
+      games: typeof x.games === "number" ? x.games : inferredTotal,
+      total: inferredTotal,
+      topDeckKey: rawTopDeckKey || null,
+      topDeckName: rawTopDeckName || null,
+      topPokemons: normalizedPokemons,
+      topDeck,
     };
   });
 
