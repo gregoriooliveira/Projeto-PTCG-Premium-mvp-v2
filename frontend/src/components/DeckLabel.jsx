@@ -49,9 +49,14 @@ export default function DeckLabel({
       ))
     : [];
 
-  if (stacked) {
-    // Exibe em 2 linhas quando o nome do deck é composto (A / B)
-    const [a, b] = String(deckName || "").split(" / ");
+  const normalizedName = typeof deckName === "string" ? deckName : "";
+  const [firstSegmentRaw, ...restSegmentsRaw] = normalizedName.split(" / ");
+  const firstSegment = firstSegmentRaw?.trim?.() ?? "";
+  const restSegments = restSegmentsRaw.map((segment) => (segment ?? "").trim());
+  const secondSegment = restSegments.join(" / ").trim();
+  const hasSecondSegment = secondSegment.length > 0;
+
+  if (stacked && hasSecondSegment) {
     const firstIcon = showIcons ? imgs[0] : null;
     const secondIcon = showIcons ? imgs[1] : null;
 
@@ -59,22 +64,22 @@ export default function DeckLabel({
       <div className={`min-w-0 flex flex-col gap-1 ${className}`}>
         <div className="flex items-center gap-2 min-w-0">
           {firstIcon}
-          <span className="truncate">{a || deckName}</span>
+          <span className="truncate">{firstSegment || normalizedName}</span>
         </div>
-        {(b || secondIcon) && (
-          <div className="flex items-center gap-2 min-w-0">
-            {secondIcon}
-            <span className="truncate">{b}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-2 min-w-0">
+          {secondIcon}
+          <span className="truncate">{secondSegment}</span>
+        </div>
       </div>
     );
   }
 
+  const inlineLabel = stacked ? firstSegment || normalizedName : deckName;
+
   return (
     <div className={`min-w-0 flex items-center gap-2 ${className}`}>
       {showIcons && imgs}
-      <span className="truncate">{deckName}</span>
+      <span className="truncate">{inlineLabel}</span>
     </div>
   );
 }
