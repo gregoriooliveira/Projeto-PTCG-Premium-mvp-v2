@@ -674,8 +674,24 @@ export default function PhysicalPageV2({ manualMatches }) {
   const manualWinRate = useMemo(() => winRate(manualCounts), [manualCounts]);
   const summaryCounts = summaryData?.summary?.counts;
   const summaryWinRate = typeof summaryData?.summary?.wr === "number" ? summaryData.summary.wr : null;
-  const totalMatches = summaryCounts?.total ?? manualCounts.total ?? manual.length;
-  const displayWinRate = summaryWinRate ?? manualWinRate;
+  const hasManualMatches = manual.length > 0;
+  const summaryTotal = typeof summaryCounts?.total === "number" ? summaryCounts.total : null;
+  const hasValidSummaryCounts = typeof summaryTotal === "number" && summaryTotal > 0;
+  const manualTotal = typeof manualCounts?.total === "number" ? manualCounts.total : 0;
+
+  const totalMatches = hasManualMatches
+    ? manualTotal > 0
+      ? manualTotal
+      : manual.length
+    : hasValidSummaryCounts
+    ? summaryTotal
+    : manualTotal;
+
+  const displayWinRate = hasManualMatches
+    ? manualWinRate
+    : hasValidSummaryCounts && typeof summaryWinRate === "number"
+    ? summaryWinRate
+    : manualWinRate;
 
   const topDeckComputed = useMemo(() => topDeckByWinRate(manual), [manual]);
   const summaryTopDeck = summaryData?.summary?.topDeck || null;
