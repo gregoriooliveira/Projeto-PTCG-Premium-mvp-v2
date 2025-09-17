@@ -168,21 +168,74 @@ const db = {
             if (subcollectionName !== "rounds") {
               throw new Error(`Unsupported subcollection ${subcollectionName}`);
             }
+            const getSnapshots = () => {
+              const eventRounds = roundsStore[id] || {};
+              const entries = Object.entries(eventRounds);
+              return entries.map(([roundId, roundData]) =>
+                createRoundSnapshot(id, roundId, roundData),
+              );
+            };
+            const buildResult = (snapshots) => ({
+              forEach(callback) {
+                snapshots.forEach((snapshot) => callback(snapshot));
+              },
+              docs: snapshots,
+              size: snapshots.length,
+            });
             return {
               async get() {
-                const eventRounds = roundsStore[id] || {};
-                const entries = Object.entries(eventRounds);
-                const snapshots = entries.map(([roundId, roundData]) =>
-                  createRoundSnapshot(id, roundId, roundData),
-                );
+                const snapshots = getSnapshots();
+                return buildResult(snapshots);
+              },
+              orderBy(field, direction = "asc") {
+                const dir = String(direction || "asc").toLowerCase() === "desc" ? -1 : 1;
                 return {
-                  forEach(callback) {
-                    snapshots.forEach((snapshot) => callback(snapshot));
+                  async get() {
+                    const snapshots = getSnapshots().sort((a, b) => {
+                      const aData = a.data() || {};
+                      const bData = b.data() || {};
+                      const av = aData[field];
+                      const bv = bData[field];
+                      if (av == null && bv == null) {
+                        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+                      }
+                      if (av == null) return -1 * dir;
+                      if (bv == null) return 1 * dir;
+                      if (av === bv) {
+                        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+                      }
+                      if (typeof av === "number" && typeof bv === "number") {
+                        return (av - bv) * dir;
+                      }
+                      return String(av).localeCompare(String(bv)) * dir;
+                    });
+                    return buildResult(snapshots);
                   },
-                  docs: snapshots,
                 };
               },
               doc: (roundId) => ({
+                async get() {
+                  const eventRounds = roundsStore[id] || {};
+                  const current = eventRounds[roundId];
+                  const exists = current !== undefined;
+                  const snapshot = exists ? clone(current) : undefined;
+                  return {
+                    exists,
+                    data: () => snapshot,
+                  };
+                },
+                async set(data, options = {}) {
+                  const eventRounds = roundsStore[id] || {};
+                  const nextData = clone(data);
+                  if (!nextData.roundId) {
+                    nextData.roundId = roundId;
+                  }
+                  const current = eventRounds[roundId];
+                  const merged = options.merge
+                    ? { ...(current ? clone(current) : {}), ...nextData }
+                    : nextData;
+                  roundsStore[id] = { ...eventRounds, [roundId]: merged };
+                },
                 async delete() {
                   deleteRound(id, roundId);
                 },
@@ -237,6 +290,16 @@ const { default: router } = await import("./routes.js");
 function getPatchHandler() {
   const layer = router.stack.find(
     (l) => l.route && l.route.path === "/events/:id" && l.route.methods.patch,
+  );
+  return layer.route.stack[1].handle;
+}
+
+function getRoundPatchHandler() {
+  const layer = router.stack.find(
+    (l) =>
+      l.route &&
+      l.route.path === "/events/:eventId/rounds/:roundId" &&
+      l.route.methods.patch,
   );
   return layer.route.stack[1].handle;
 }
@@ -372,6 +435,74 @@ describe("physical routes PATCH /events/:id", () => {
     const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
     expect(prevArg).toMatchObject(original);
     expect(nextArg).toEqual(res.body);
+  });
+});
+
+describe("physical routes PATCH /events/:eventId/rounds/:roundId", () => {
+  beforeEach(() => {
+    eventsStore = {
+      evt1: {
+        eventId: "evt1",
+        createdAt: 1704067200000,
+      },
+    };
+    roundsStore = {
+      evt1: {
+        "round-1": {
+          roundId: "round-1",
+          number: 1,
+          opponentName: "Brock",
+          opponentDeckName: "Rock Deck",
+          normOppDeckKey: "rock deck",
+          g1: { result: "V", order: "1st" },
+          g2: { result: "", order: "" },
+          g3: { result: "", order: "" },
+          flags: { noShow: false, bye: false, id: false },
+          result: "W",
+        },
+      },
+    };
+    rawLogsStore = {};
+    recomputeAllForEvent.mockClear();
+  });
+
+  it("updates stored round without duplicating entries", async () => {
+    const handler = getRoundPatchHandler();
+    const req = {
+      params: { eventId: "evt1", roundId: "round-1" },
+      body: {
+        number: 1,
+        opponentName: "Misty",
+        opponentDeckName: "Water Control",
+        oppMonA: { slug: "staryu", name: "Staryu" },
+        oppMonASlug: "staryu",
+        g1: { result: "D", order: "2nd" },
+        g2: { result: "V", order: "1st" },
+        g3: { result: "", order: "" },
+        flags: { id: true },
+      },
+    };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(res.body).toMatchObject({
+      roundId: "round-1",
+      number: 1,
+      opponentName: "Misty",
+      opponentDeckName: "Water Control",
+    });
+    expect(res.body.result).toBe("T");
+    expect(Object.keys(roundsStore.evt1)).toEqual(["round-1"]);
+    expect(roundsStore.evt1["round-1"]).toMatchObject({
+      roundId: "round-1",
+      opponentName: "Misty",
+      opponentDeckName: "Water Control",
+      result: "T",
+      flags: { id: true, noShow: false, bye: false },
+    });
+    expect(eventsStore.evt1.stats.counts).toEqual({ W: 0, L: 0, T: 1 });
+    expect(recomputeAllForEvent).toHaveBeenCalledOnce();
   });
 });
 

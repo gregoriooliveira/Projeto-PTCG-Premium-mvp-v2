@@ -5,7 +5,11 @@ import PokemonAutocomplete from "./components/PokemonAutocomplete";
 import DeckLabel from "./components/DeckLabel.jsx";
 import DeckModal from "./components/DeckModal.jsx";
 import { getEvent, updateEvent, deleteEvent } from "./eventsRepo.js";
-import { postPhysicalRound, getPhysicalRounds } from "./services/physicalApi.js";
+import {
+  postPhysicalRound,
+  getPhysicalRounds,
+  updatePhysicalRound,
+} from "./services/physicalApi.js";
 import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
 // helper: get store slug from hash query
@@ -301,6 +305,9 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     g3: { result: "", order: "" },
     noShow: false,
     bye: false,
+    id: false,
+    roundId: null,
+    roundNumber: null,
   });
 
   const [iconMap, setIconMap] = useState({});
@@ -328,6 +335,9 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       g3: { result: "", order: "" },
       noShow: false,
       bye: false,
+      id: false,
+      roundId: null,
+      roundNumber: null,
     });
   }
 
@@ -403,6 +413,9 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       g3: { ...(r?.g3 || { result: "", order: "" }) },
       noShow: r.flags?.noShow || false,
       bye: r.flags?.bye || false,
+      id: !!r.flags?.id,
+      roundId: r.roundId || r.id || null,
+      roundNumber: typeof r.number === "number" ? r.number : idx + 1,
     });
     setEditRoundIndex(idx);
     try{ document.getElementById("round-form")?.scrollIntoView({behavior:"smooth"}); }catch{}
@@ -429,9 +442,21 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     // if (canShowGame3()) { /* optional */ }
     if (errors.length > 0) { alert(errors.join("\n")); return; }
 
+    const editingRound =
+      editRoundIndex !== null && Array.isArray(rounds) ? rounds[editRoundIndex] : null;
+    const preservedId =
+      editingRound?.roundId || editingRound?.id || form.roundId || null;
+    const preservedNumberRaw =
+      editingRound?.number ?? form.roundNumber ?? null;
+    const fallbackNumber = Array.isArray(rounds) ? rounds.length + 1 : 1;
+    const parsedNumber = Number(preservedNumberRaw);
+    const roundNumber = Number.isFinite(parsedNumber) && parsedNumber > 0 ? parsedNumber : fallbackNumber;
+    const roundId = preservedId || `r-${roundNumber}`;
+
     const round = {
-      id: `r-${rounds.length + 1}`,
-      number: rounds.length + 1,
+      id: roundId,
+      roundId,
+      number: roundNumber,
       opponentName: form.opponentName?.trim() || "",
       opponentDeckName: form.opponentDeckName?.trim() || "",
       oppMonA: form.oppMonA || undefined,
@@ -448,7 +473,11 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     };
     let saved;
     try {
-      saved = await postPhysicalRound(eventData.id, round);
+      if (editingRound) {
+        saved = await updatePhysicalRound(eventData.id, roundId, round);
+      } else {
+        saved = await postPhysicalRound(eventData.id, round);
+      }
     } catch (err) {
       console.error("Falha ao salvar round", err);
       showToast("Não foi possível salvar o round. Tente novamente.", "error");
@@ -456,24 +485,21 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
     }
 
     const finalRound = {
+      ...(editingRound || {}),
       ...round,
       ...(saved || {}),
-      id: saved?.roundId || saved?.id || round.id,
-      number: saved?.number || round.number,
+      id: saved?.roundId || saved?.id || roundId,
+      roundId: saved?.roundId || round.roundId || saved?.id || roundId,
+      number:
+        saved?.number != null && !Number.isNaN(saved.number)
+          ? saved.number
+          : roundNumber,
     };
 
     if (editRoundIndex !== null) {
       setRounds((rs) =>
         Array.isArray(rs)
-          ? rs.map((it, i) =>
-              i === editRoundIndex
-                ? {
-                    ...finalRound,
-                    id: finalRound.id || it.id,
-                    number: finalRound.number || it.number,
-                  }
-                : it
-            )
+          ? rs.map((it, i) => (i === editRoundIndex ? { ...it, ...finalRound } : it))
           : [finalRound]
       );
       setEditRoundIndex(null);
