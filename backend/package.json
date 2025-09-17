@@ -7,7 +7,7 @@
     "dev": "node --env-file=.env src/server.js",
     "start": "node src/server.js",
     "loadtest": "node src/live/load.test.js",
-    "test": "vitest run src/live/routes.test.js src/physical/routes.test.js"
+    "test": "vitest run src/live/routes.test.js src/physical/routes.test.js src/home/routes.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
