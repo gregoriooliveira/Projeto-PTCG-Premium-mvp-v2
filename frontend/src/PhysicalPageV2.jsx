@@ -334,6 +334,50 @@ export const countsFrom = (rows = []) => wlCounts(rows);
 
 export const winRate = (counts = {}) => winRateFromCounts(counts);
 
+export const aggregatePokemonHintsForDeck = (matches = [], deckKey, options = {}) => {
+  const limitCandidate = Number.isFinite(options?.limit) ? Math.floor(options.limit) : null;
+  const limit = limitCandidate && limitCandidate > 0 ? limitCandidate : 4;
+  const normalizedKey = normalizeDeckKey(deckKey || "");
+  if (!normalizedKey) return [];
+
+  const counts = new Map();
+  let order = 0;
+
+  for (const match of Array.isArray(matches) ? matches : []) {
+    if (!match) continue;
+    const matchKey = normalizeDeckKey(match?.playerDeck || "");
+    if (!matchKey || matchKey !== normalizedKey) continue;
+
+    const hints = Array.isArray(match?.userPokemons) ? match.userPokemons : [];
+    for (const rawCandidate of hints) {
+      const rawValue = String(
+        typeof rawCandidate === "string"
+          ? rawCandidate
+          : rawCandidate?.slug || rawCandidate?.name || rawCandidate?.id || "",
+      ).trim();
+      if (!rawValue) continue;
+      const hintKey = rawValue.toLowerCase();
+      if (!counts.has(hintKey)) {
+        counts.set(hintKey, { value: rawValue, count: 0, order });
+        order += 1;
+      }
+      const entry = counts.get(hintKey);
+      entry.count += 1;
+    }
+  }
+
+  if (!counts.size) return [];
+
+  return Array.from(counts.values())
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      if (a.order !== b.order) return a.order - b.order;
+      return a.value.localeCompare(b.value);
+    })
+    .slice(0, limit)
+    .map((entry) => entry.value);
+};
+
 export const clampPage = (p, totalPages) => {
   const n = Number.isFinite(p) ? p : 1;
   return Math.min(Math.max(1, n), Math.max(1, totalPages || 1));
@@ -750,15 +794,18 @@ export default function PhysicalPageV2({ manualMatches }) {
 
   let topDeckHints =
     Array.isArray(summaryTopDeck?.avatars) && summaryTopDeck.avatars.length ? summaryTopDeck.avatars : [];
-  if (!topDeckHints.length && topDeckName && topDeckName !== "—") {
-    const normalizedDeckName = normalizeDeckKey(topDeckName);
-    const match = manual.find(
-      (entry) =>
-        normalizeDeckKey(entry?.playerDeck || "") === normalizedDeckName &&
-        Array.isArray(entry?.userPokemons) &&
-        entry.userPokemons.length,
-    );
-    if (match?.userPokemons?.length) topDeckHints = match.userPokemons.slice(0, 4);
+  if (!topDeckHints.length) {
+    const deckKeyCandidates = [topDeckComputed?.deckKey, summaryDeckKey, topDeckName]
+      .map((value) => (typeof value === "string" ? value : null))
+      .filter((value, index, arr) => value && value !== "—" && arr.indexOf(value) === index);
+
+    for (const candidate of deckKeyCandidates) {
+      const aggregated = aggregatePokemonHintsForDeck(manual, candidate, { limit: 4 });
+      if (aggregated.length) {
+        topDeckHints = aggregated;
+        break;
+      }
+    }
   }
   if (!topDeckHints.length) topDeckHints = FALLBACK_TOP_DECK_HINTS;
 
