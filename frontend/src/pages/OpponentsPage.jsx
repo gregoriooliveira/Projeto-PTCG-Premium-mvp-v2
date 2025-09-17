@@ -452,7 +452,7 @@ export default function OpponentsPage() {
                       <a
                         key={log.id}
                         href={buildLogHref(log)}
-                        className="grid grid-cols-12 items-center gap-2 py-2 text-sm"
+                        className="grid grid-cols-12 items-center gap-2 py-2 text-sm transition-colors hover:bg-zinc-900/50"
                       >
                         <div className="col-span-2">{log.date}</div>
                         <div className="col-span-4">
