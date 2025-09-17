@@ -9,6 +9,45 @@ function sumCounts(a={W:0,L:0,T:0}, b={W:0,L:0,T:0}){
 }
 function total(c){ return (c.W||0)+(c.L||0)+(c.T||0); }
 
+function extractPokemonSlug(raw) {
+  let value = "";
+  if (typeof raw === "string") value = raw;
+  else if (raw && typeof raw === "object") {
+    for (const key of ["slug", "name", "id"]) {
+      const candidate = raw[key];
+      if (typeof candidate === "string" && candidate.trim()) {
+        value = candidate;
+        break;
+      }
+    }
+  }
+  if (!value) return "";
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug;
+}
+
+function normalizePokemonHints(...sources) {
+  const seen = new Set();
+  const normalized = [];
+  for (const source of sources) {
+    if (!Array.isArray(source)) continue;
+    for (const raw of source) {
+      if (normalized.length >= 2) break;
+      const slug = extractPokemonSlug(raw);
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      normalized.push(slug);
+    }
+    if (normalized.length >= 2) break;
+  }
+  return normalized.length ? normalized : null;
+}
+
 function normalizeCounts(source){
   if (!source || typeof source !== "object") return null;
   const out = { W: 0, L: 0, T: 0 };
@@ -61,6 +100,8 @@ async function sourceSummary(prefix, limitDays){
     result: ev.result,
     playerDeck: ev.deckName,
     opponentDeck: ev.opponentDeck,
+    userPokemons: normalizePokemonHints(ev.pokemons, ev.userPokemons),
+    opponentPokemons: normalizePokemonHints(ev.opponentPokemons),
     counts: eventCounts(ev),
     name: prefix === "live"
       ? ((ev.you && ev.opponent)
@@ -232,9 +273,15 @@ function mergeHome(a, b, limitDays){
   const recentTournaments = [...a.recentTournaments, ...b.recentTournaments].sort((x,y)=> String(y.dateISO).localeCompare(String(x.dateISO))).slice(0,5);
 
   // recentLogs (merge and slice)
+  function cloneRecentLog(log = {}) {
+    const copy = { ...log };
+    if (Array.isArray(log.userPokemons)) copy.userPokemons = [...log.userPokemons];
+    if (Array.isArray(log.opponentPokemons)) copy.opponentPokemons = [...log.opponentPokemons];
+    return copy;
+  }
   const recentLogs = [
-    ...a.recentLogs.map(log => ({ ...log })),
-    ...b.recentLogs.map(log => ({ ...log }))
+    ...(Array.isArray(a.recentLogs) ? a.recentLogs.map(cloneRecentLog) : []),
+    ...(Array.isArray(b.recentLogs) ? b.recentLogs.map(cloneRecentLog) : [])
   ].sort((x,y)=> String(y.dateISO).localeCompare(String(x.dateISO))).slice(0,10);
 
   const topDeck = topDecks[0] ? { deckKey: topDecks[0].deckKey, wr: topDecks[0].wr, avatars: topDecks[0].avatars, pokemons: topDecks[0].pokemons } : null;
