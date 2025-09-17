@@ -6,6 +6,16 @@ function safeDocId(s) {
   return encodeURIComponent(String(s ?? ""));
 }
 
+function extractPokemonSlug(raw) {
+  if (typeof raw === "string") return raw.trim();
+  if (raw && typeof raw === "object") {
+    if (typeof raw.slug === "string" && raw.slug.trim()) return raw.slug.trim();
+    if (typeof raw.name === "string" && raw.name.trim()) return raw.name.trim();
+    if (typeof raw.id === "string" && raw.id.trim()) return raw.id.trim();
+  }
+  return "";
+}
+
 /** Recalcula o agregado por dia */
 export async function recomputeDay(date) {
   if (!date) return;
@@ -107,14 +117,79 @@ export async function recomputeOpponent(opponentName) {
   }
   let counts = { W: 0, L: 0, T: 0 };
   let games = 0;
+  const perDeck = new Map();
   snap.forEach(d => {
     const ev = d.data();
     counts = countsAdd(counts, countsOfResult(ev.result));
     games += 1;
+    const rawDeckKey = typeof ev.opponentDeckKey === "string" ? ev.opponentDeckKey.trim() : "";
+    const rawDeckName = typeof ev.opponentDeck === "string" ? ev.opponentDeck.trim() : "";
+    const deckKey = rawDeckKey || "";
+    const deckName = rawDeckName || "";
+    const mapKey = deckKey ? `key:${deckKey}` : deckName ? `name:${deckName}` : "__unknown__";
+    let entry = perDeck.get(mapKey);
+    if (!entry) {
+      entry = {
+        deckKey,
+        deckName,
+        games: 0,
+        pokemons: new Set(),
+      };
+      perDeck.set(mapKey, entry);
+    }
+    entry.games += 1;
+    if (deckKey && !entry.deckKey) entry.deckKey = deckKey;
+    if (deckName && !entry.deckName) entry.deckName = deckName;
+    if (Array.isArray(ev.opponentPokemons)) {
+      for (const raw of ev.opponentPokemons) {
+        const slug = extractPokemonSlug(raw);
+        if (slug) entry.pokemons.add(slug);
+      }
+    }
   });
   const wr = wrPercent(counts);
+  let topDeckKey = null;
+  let topDeckName = null;
+  let topPokemons = [];
+  let bestEntry = null;
+  for (const entry of perDeck.values()) {
+    if (!bestEntry) {
+      bestEntry = entry;
+      continue;
+    }
+    if (entry.games > bestEntry.games) {
+      bestEntry = entry;
+      continue;
+    }
+    if (entry.games === bestEntry.games) {
+      const entryHas = entry.deckKey || entry.deckName ? 1 : 0;
+      const bestHas = bestEntry.deckKey || bestEntry.deckName ? 1 : 0;
+      if (entryHas > bestHas) {
+        bestEntry = entry;
+      }
+    }
+  }
+  if (bestEntry) {
+    topDeckKey = bestEntry.deckKey ? bestEntry.deckKey : null;
+    topDeckName = bestEntry.deckName ? bestEntry.deckName : null;
+    topPokemons = Array.from(bestEntry.pokemons)
+      .map(s => (typeof s === "string" ? s.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 2);
+  }
+  const total = (counts.W || 0) + (counts.L || 0) + (counts.T || 0);
   await db.collection("liveOpponentsAgg").doc(docId).set(
-    { opponent: opponentName, games, counts, wr },
+    {
+      opponent: opponentName,
+      opponentName,
+      games,
+      total,
+      counts,
+      wr,
+      topDeckKey,
+      topDeckName,
+      topPokemons,
+    },
     { merge: true }
   );
 }

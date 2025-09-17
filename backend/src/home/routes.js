@@ -113,10 +113,39 @@ async function sourceSummary(prefix, limitDays){
   // opponents
   const oppSnap = await db.collection(`${prefix}OpponentsAgg`).get();
   const topOpponents = oppSnap.docs.map(doc => {
-    const d = doc.data();
+    const d = doc.data() || {};
+    const counts = d.counts || {};
+    const inferredTotal =
+      typeof d.total === "number"
+        ? d.total
+        : typeof d.games === "number"
+          ? d.games
+          : (counts.W || 0) + (counts.L || 0) + (counts.T || 0);
+    const rawTopPokemons = Array.isArray(d.topPokemons) ? d.topPokemons : [];
+    const normalizedPokemons = rawTopPokemons
+      .map(p => (typeof p === "string" ? p.trim() : ""))
+      .filter(Boolean)
+      .slice(0, 2);
+    const rawTopDeckKey = typeof d.topDeckKey === "string" ? d.topDeckKey.trim() : "";
+    const rawTopDeckName = typeof d.topDeckName === "string" ? d.topDeckName.trim() : "";
+    const hasDeckInfo = !!(rawTopDeckKey || rawTopDeckName || normalizedPokemons.length);
+    const topDeck = hasDeckInfo
+      ? {
+          deckKey: rawTopDeckKey || null,
+          deckName: rawTopDeckName || null,
+          pokemons: normalizedPokemons.length ? normalizedPokemons : undefined,
+        }
+      : null;
     return {
-      opponentName: d.opponentName || doc.id, counts: d.counts, wr: d.wr,
-      topDeck: d.topDeckKey ? { deckKey: d.topDeckKey } : null
+      opponentName: d.opponentName || d.opponent || doc.id,
+      counts,
+      wr: d.wr,
+      games: typeof d.games === "number" ? d.games : inferredTotal,
+      total: inferredTotal,
+      topDeckKey: rawTopDeckKey || null,
+      topDeckName: rawTopDeckName || null,
+      topPokemons: normalizedPokemons,
+      topDeck,
     };
   }).sort((a,b)=> (total(b.counts)-total(a.counts))).slice(0,5);
   /*__ENRICH_TOPDECK_POKEMONS__*/
