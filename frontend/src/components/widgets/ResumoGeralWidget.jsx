@@ -20,6 +20,13 @@ export default function ResumoGeralWidget({ title, variant, winRate, center, top
   const isFisico = variant === "fisico";
   const isDatasLive = variant === "datasLive";
 
+  const topDeckName = typeof topDeck?.deckName === "string" ? topDeck.deckName : "";
+  const topDeckNameSegments = topDeckName
+    .split(" / ")
+    .slice(1)
+    .map((segment) => segment.trim());
+  const shouldStackTopDeck = topDeckNameSegments.some((segment) => segment.length > 0);
+
   const TopDeckContent = (
     <div className="flex justify-end">
       <div className="text-right">
@@ -31,7 +38,7 @@ export default function ResumoGeralWidget({ title, variant, winRate, center, top
           <DeckLabel
             deckName={topDeck?.deckName}
             pokemonHints={topDeck?.pokemons}
-            stacked
+            stacked={shouldStackTopDeck}
             className="items-end text-right"
           />
         </div>

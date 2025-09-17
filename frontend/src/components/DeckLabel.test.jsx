@@ -55,4 +55,26 @@ describe("DeckLabel", () => {
     expect(imgs[0].getAttribute("src")).toBe("https://img/chien-pao.png");
     expect(imgs[1].getAttribute("src")).toBe("https://img/baxcalibur.png");
   });
+
+  it("renders stacked layout for multi-segment deck names", () => {
+    render(<DeckLabel deckName="Arceus / Giratina" stacked showIcons={false} />);
+
+    const firstLine = screen.getByText("Arceus");
+    const secondLine = screen.getByText("Giratina");
+
+    const container = firstLine.closest("div")?.parentElement;
+    expect(container?.className).toContain("flex-col");
+    expect(container?.querySelectorAll("span.truncate")).toHaveLength(2);
+    expect(secondLine.closest("div")?.parentElement).toBe(container);
+  });
+
+  it("keeps inline layout for single-segment deck names", () => {
+    render(<DeckLabel deckName="Lugia VSTAR" showIcons={false} />);
+
+    const label = screen.getByText("Lugia VSTAR");
+    const container = label.closest("div");
+
+    expect(container?.className).not.toContain("flex-col");
+    expect(container?.querySelectorAll("span.truncate")).toHaveLength(1);
+  });
 });
