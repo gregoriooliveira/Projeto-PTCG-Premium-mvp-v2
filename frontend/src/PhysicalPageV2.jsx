@@ -378,6 +378,29 @@ export const aggregatePokemonHintsForDeck = (matches = [], deckKey, options = {}
     .map((entry) => entry.value);
 };
 
+export const deriveTopDeckHints = ({
+  matches = [],
+  deckKeyCandidates = [],
+  summaryTopDeck = null,
+  limit = 4,
+} = {}) => {
+  const candidates = (Array.isArray(deckKeyCandidates) ? deckKeyCandidates : [])
+    .map((value) => (typeof value === "string" ? value : null))
+    .filter((value, index, arr) => value && value !== "—" && arr.indexOf(value) === index);
+
+  for (const candidate of candidates) {
+    const aggregated = aggregatePokemonHintsForDeck(matches, candidate, { limit });
+    if (aggregated.length) return aggregated;
+  }
+
+  const summaryHints =
+    Array.isArray(summaryTopDeck?.avatars) && summaryTopDeck.avatars.length ? summaryTopDeck.avatars : [];
+
+  if (summaryHints.length) return summaryHints;
+
+  return FALLBACK_TOP_DECK_HINTS;
+};
+
 export const clampPage = (p, totalPages) => {
   const n = Number.isFinite(p) ? p : 1;
   return Math.min(Math.max(1, n), Math.max(1, totalPages || 1));
@@ -792,22 +815,21 @@ export default function PhysicalPageV2({ manualMatches }) {
 
   const topDeckWinRate = summaryTopDeck?.wr ?? topDeckComputed?.winRate ?? 0;
 
-  let topDeckHints =
-    Array.isArray(summaryTopDeck?.avatars) && summaryTopDeck.avatars.length ? summaryTopDeck.avatars : [];
-  if (!topDeckHints.length) {
-    const deckKeyCandidates = [topDeckComputed?.deckKey, summaryDeckKey, topDeckName]
-      .map((value) => (typeof value === "string" ? value : null))
-      .filter((value, index, arr) => value && value !== "—" && arr.indexOf(value) === index);
+  const deckKeyCandidates = useMemo(
+    () => [topDeckComputed?.deckKey, summaryDeckKey, topDeckName],
+    [topDeckComputed?.deckKey, summaryDeckKey, topDeckName],
+  );
 
-    for (const candidate of deckKeyCandidates) {
-      const aggregated = aggregatePokemonHintsForDeck(manual, candidate, { limit: 4 });
-      if (aggregated.length) {
-        topDeckHints = aggregated;
-        break;
-      }
-    }
-  }
-  if (!topDeckHints.length) topDeckHints = FALLBACK_TOP_DECK_HINTS;
+  const topDeckHints = useMemo(
+    () =>
+      deriveTopDeckHints({
+        matches: manual,
+        deckKeyCandidates,
+        summaryTopDeck,
+        limit: 4,
+      }),
+    [manual, deckKeyCandidates, summaryTopDeck],
+  );
 
   const onNew = () => window.__ptcgNovoRegistroDialogRef?.open();
 
