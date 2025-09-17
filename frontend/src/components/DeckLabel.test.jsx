@@ -1,0 +1,58 @@
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import DeckLabel from "./DeckLabel.jsx";
+import { prettyDeckKey } from "../services/prettyDeckKey.js";
+
+const createMockResponse = (slug) => ({
+  ok: true,
+  async json() {
+    return {
+      sprites: {
+        other: {
+          "official-artwork": {
+            front_default: `https://img/${slug}.png`,
+          },
+        },
+      },
+    };
+  },
+});
+
+describe("DeckLabel", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    global.fetch = vi.fn(async (url) => {
+      const slug = url.split("/").pop();
+      return createMockResponse(slug);
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("renders hyphenated Pokémon names and resolves icons without hints", async () => {
+    const deckName = prettyDeckKey("chien-pao-baxcalibur");
+
+    render(<DeckLabel deckName={deckName} showIcons />);
+
+    const label = screen.getByText("Chien-Pao / Baxcalibur");
+    expect(label.textContent).toBe("Chien-Pao / Baxcalibur");
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/chien-pao")
+      );
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining("/baxcalibur")
+      );
+    });
+
+    const imgs = screen.getAllByRole("img");
+    expect(imgs.length).toBe(2);
+    expect(imgs[0].getAttribute("src")).toBe("https://img/chien-pao.png");
+    expect(imgs[1].getAttribute("src")).toBe("https://img/baxcalibur.png");
+  });
+});
