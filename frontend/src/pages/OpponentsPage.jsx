@@ -351,7 +351,7 @@ export default function OpponentsPage() {
   return (
     <div className="min-h-[80vh] w-full bg-zinc-950 text-zinc-100 p-4 md:p-6">
       {/* Botão voltar padrão */}
-      <BackButton href="#/tcg-live" label="Voltar" />
+      <BackButton href="#" label="Voltar" />
 
       <div className="mt-2">
         <h1 className="text-2xl md:text-3xl font-semibold">Oponentes</h1>
