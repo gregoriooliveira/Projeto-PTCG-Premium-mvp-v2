@@ -19,6 +19,30 @@ function safeArray(payload) {
   }
   return [];
 }
+
+function normalizePokemonHints(...sources) {
+  const seen = new Set();
+  const result = [];
+  for (const source of sources) {
+    if (!source) continue;
+    if (!Array.isArray(source)) continue;
+    for (const raw of source) {
+      if (!raw && raw !== 0) continue;
+      let value = null;
+      if (typeof raw === "string" || typeof raw === "number") {
+        value = String(raw).trim();
+      } else if (typeof raw === "object") {
+        const candidate = raw?.slug ?? raw?.name ?? raw?.value ?? raw?.label ?? null;
+        if (candidate != null) value = String(candidate).trim();
+      }
+      if (!value) continue;
+      if (seen.has(value)) continue;
+      seen.add(value);
+      result.push(value);
+    }
+  }
+  return result;
+}
 async function tryJson(url) {
   try {
     const r = await fetch(url);
@@ -106,9 +130,31 @@ async function listLogsByDeck(deckKey) {
   const normalizedKey = String(deckKey || "").toLowerCase();
   const url = `${API}/api/live/decks/${encodeURIComponent(normalizedKey)}/logs`;
   const j = await tryJson(url);
-  return safeArray(j).filter(r =>
-    (r.source || r.origin || "live").toLowerCase().includes("live")
-  );
+  return safeArray(j)
+    .filter(r => (r.source || r.origin || "live").toLowerCase().includes("live"))
+    .map(r => {
+      const userPokemons = normalizePokemonHints(
+        r?.userPokemons,
+        r?.myPokemons,
+        r?.playerPokemons,
+        r?.playerPokemonHints,
+        r?.userPokemonHints,
+        r?.pokemons,
+      );
+      const opponentPokemons = normalizePokemonHints(
+        r?.opponentPokemons,
+        r?.oppPokemons,
+        r?.opponentPokemonHints,
+        r?.oppPokemonHints,
+      );
+      return {
+        ...r,
+        userPokemons,
+        myPokemons: userPokemons,
+        opponentPokemons,
+        oppPokemons: opponentPokemons,
+      };
+    });
 }
 
 /* ============================ UI bits ============================ */
@@ -158,17 +204,38 @@ function DecksLivePage() {
       try {
         setLoadingDeck(prev => ({ ...prev, [deckKey]: true }));
         const raw = await listLogsByDeck(deckKey);
-        const norm = raw.map(r => ({
-          id: r.id,
-          createdAt: r.createdAt ?? r.date ?? null,
-          dateISO: toDateISO(r.date || r.createdAt || r.dateISO),
-          opponent: r.opponent || r.opp || "-",
-          opponentDeck: r.opponentDeck || r.oppDeck || r.opponent_deck || "-",
-          result: String(r.result || r.r || "-").toUpperCase(),
-          eventName: getTournamentNameFromLog(r),
-          tournamentId: getTournamentIdFromLog(r),
-        }))
-        .sort((a,b)=> String(b.createdAt||b.dateISO||"").localeCompare(String(a.createdAt||a.dateISO||"")));
+        const norm = raw
+          .map(r => {
+            const userPokemons = normalizePokemonHints(
+              r?.userPokemons,
+              r?.myPokemons,
+              r?.playerPokemons,
+              r?.playerPokemonHints,
+              r?.userPokemonHints,
+              r?.pokemons,
+            );
+            const opponentPokemons = normalizePokemonHints(
+              r?.opponentPokemons,
+              r?.oppPokemons,
+              r?.opponentPokemonHints,
+              r?.oppPokemonHints,
+            );
+            return {
+              id: r.id,
+              createdAt: r.createdAt ?? r.date ?? null,
+              dateISO: toDateISO(r.date || r.createdAt || r.dateISO),
+              opponent: r.opponent || r.opp || "-",
+              opponentDeck: r.opponentDeck || r.oppDeck || r.opponent_deck || "-",
+              result: String(r.result || r.r || "-").toUpperCase(),
+              eventName: getTournamentNameFromLog(r),
+              tournamentId: getTournamentIdFromLog(r),
+              userPokemons,
+              myPokemons: userPokemons,
+              opponentPokemons,
+              oppPokemons: opponentPokemons,
+            };
+          })
+          .sort((a,b)=> String(b.createdAt||b.dateISO||"").localeCompare(String(a.createdAt||a.dateISO||"")));
         setLogsByDeck(prev => ({ ...prev, [deckKey]: norm }));
       } finally {
         setLoadingDeck(prev => ({ ...prev, [deckKey]: false }));
@@ -315,10 +382,10 @@ function DecksLivePage() {
                                       <td className="px-3 py-2">
                                         {logHref ? (
                                           <a href={logHref} className="block">
-                                            <DeckLabel deckName={oppDeckDisplay} />
+                                            <DeckLabel deckName={oppDeckDisplay} pokemonHints={log.opponentPokemons} />
                                           </a>
                                         ) : (
-                                          <DeckLabel deckName={oppDeckDisplay} />
+                                          <DeckLabel deckName={oppDeckDisplay} pokemonHints={log.opponentPokemons} />
                                         )}
                                       </td>
 
