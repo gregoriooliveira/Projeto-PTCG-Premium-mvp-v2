@@ -292,7 +292,7 @@ function DecksLivePage() {
                                     <tr key={log.id} className="border-b border-zinc-800 hover:bg-zinc-900/50">
                                       <td className="px-3 py-2">
                                         {logHref ? (
-                                          <a href={logHref} className="block hover:underline">
+                                          <a href={logHref} className="block">
                                             {toDateTimeBR(log.createdAt) ||
                                               (log.dateISO ? `${log.dateISO.split("-").reverse().join("/")} , 00:00` : "-")}
                                           </a>
@@ -304,7 +304,7 @@ function DecksLivePage() {
 
                                       <td className="px-3 py-2">
                                         {logHref ? (
-                                          <a href={logHref} className="block hover:underline">
+                                          <a href={logHref} className="block">
                                             {log.opponent || "-"}
                                           </a>
                                         ) : (
@@ -314,7 +314,7 @@ function DecksLivePage() {
 
                                       <td className="px-3 py-2">
                                         {logHref ? (
-                                          <a href={logHref} className="block hover:underline">
+                                          <a href={logHref} className="block">
                                             <DeckLabel deckName={oppDeckDisplay} />
                                           </a>
                                         ) : (
