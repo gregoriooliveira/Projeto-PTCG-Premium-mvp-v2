@@ -486,6 +486,74 @@ async function recomputeRoundsAgg(eventId) {
   return { prevEvent, nextEvent };
 }
 
+function sanitizeGamePatch(game = {}, fallback = {}) {
+  const source = game && typeof game === "object" ? game : {};
+  const backup = fallback && typeof fallback === "object" ? fallback : {};
+  return {
+    result: source.result ?? backup.result ?? "",
+    order: source.order ?? backup.order ?? "",
+  };
+}
+
+function sanitizeFlagsPatch(flags = {}, fallback = {}) {
+  const base = fallback && typeof fallback === "object" ? { ...fallback } : {};
+  if (flags && typeof flags === "object") {
+    for (const [key, value] of Object.entries(flags)) {
+      base[key] = value;
+    }
+  }
+  base.noShow = !!base.noShow;
+  base.bye = !!base.bye;
+  base.id = !!base.id;
+  return base;
+}
+
+function hasOwn(source, key) {
+  return source && Object.prototype.hasOwnProperty.call(source, key);
+}
+
+function sanitizeRoundPayload(roundId, body = {}, existing = {}) {
+  const opponentName = hasOwn(body, "opponentName")
+    ? normalizeName(body.opponentName || "")
+    : normalizeName(existing.opponentName || "");
+  const opponentDeckName = hasOwn(body, "opponentDeckName")
+    ? normalizeName(body.opponentDeckName || "")
+    : normalizeName(existing.opponentDeckName || "");
+  const oppMonA = hasOwn(body, "oppMonA") ? body.oppMonA || null : existing.oppMonA || null;
+  const oppMonB = hasOwn(body, "oppMonB") ? body.oppMonB || null : existing.oppMonB || null;
+  const oppMonASlug = hasOwn(body, "oppMonASlug")
+    ? body.oppMonASlug || null
+    : existing.oppMonASlug || null;
+  const oppMonBSlug = hasOwn(body, "oppMonBSlug")
+    ? body.oppMonBSlug || null
+    : existing.oppMonBSlug || null;
+  const numberSource = hasOwn(body, "number") ? body.number : existing.number;
+  const parsedNumber = Number(numberSource);
+  const number = Number.isFinite(parsedNumber) ? parsedNumber : null;
+  const flags = sanitizeFlagsPatch(body.flags, existing.flags);
+  const normOppDeckKey = hasOwn(body, "normOppDeckKey")
+    ? body.normOppDeckKey || normalizeDeckKey(opponentDeckName || "")
+    : existing.normOppDeckKey || normalizeDeckKey(opponentDeckName || "");
+
+  const roundDoc = {
+    roundId,
+    number,
+    opponentName,
+    opponentDeckName,
+    oppMonA,
+    oppMonB,
+    oppMonASlug,
+    oppMonBSlug,
+    normOppDeckKey,
+    g1: sanitizeGamePatch(body.g1, existing.g1),
+    g2: sanitizeGamePatch(body.g2, existing.g2),
+    g3: sanitizeGamePatch(body.g3, existing.g3),
+    flags,
+  };
+  roundDoc.result = computeRoundResult(roundDoc);
+  return roundDoc;
+}
+
 r.get("/events/:eventId/rounds", async (req, res) => {
   try {
     const eventId = String(req.params.eventId || "");
@@ -513,30 +581,43 @@ r.post("/events/:eventId/rounds", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "invalid_round" });
     }
     const roundId = nanoid();
-    const roundDoc = {
-      roundId,
-      number: body.number || null,
-      opponentName: normalizeName(body.opponentName || ""),
-      opponentDeckName: normalizeName(body.opponentDeckName || ""),
-      oppMonA: body.oppMonA || null,
-      oppMonB: body.oppMonB || null,
-      oppMonASlug: body.oppMonASlug || null,
-      oppMonBSlug: body.oppMonBSlug || null,
-      normOppDeckKey: body.normOppDeckKey || normalizeDeckKey(body.opponentDeckName || ""),
-      g1: body.g1 || {},
-      g2: body.g2 || {},
-      g3: body.g3 || {},
-      flags: body.flags || {},
-    };
-    roundDoc.result = computeRoundResult(roundDoc);
+    const roundDoc = sanitizeRoundPayload(roundId, body);
     await db.collection("physicalEvents").doc(eventId)
       .collection("rounds").doc(roundId).set(roundDoc);
     const agg = await recomputeRoundsAgg(eventId);
     await recomputeAllForEvent(agg?.prevEvent, agg?.nextEvent);
-    return res.status(201).json({ roundId, ...roundDoc });
+    return res.status(201).json(roundDoc);
   } catch (e) {
     console.error("[POST /physical/events/:eventId/rounds]", e);
     return res.status(500).json({ error: "round_create_failed" });
+  }
+});
+
+r.patch("/events/:eventId/rounds/:roundId", authMiddleware, async (req, res) => {
+  try {
+    const eventId = String(req.params.eventId || "");
+    const roundId = String(req.params.roundId || "");
+    if (!eventId) return res.status(400).json({ error: "invalid_event" });
+    if (!roundId) return res.status(400).json({ error: "invalid_round" });
+    const body = req.body || {};
+    if (!body.g1 || !body.g1.result || !body.g1.order) {
+      return res.status(400).json({ error: "invalid_round" });
+    }
+    const eventRef = db.collection("physicalEvents").doc(eventId);
+    const roundRef = eventRef.collection("rounds").doc(roundId);
+    const existingSnap = await roundRef.get();
+    if (!existingSnap.exists) {
+      return res.status(404).json({ error: "round_not_found" });
+    }
+    const existingData = existingSnap.data() || {};
+    const roundDoc = sanitizeRoundPayload(roundId, body, existingData);
+    await roundRef.set(roundDoc);
+    const agg = await recomputeRoundsAgg(eventId);
+    await recomputeAllForEvent(agg?.prevEvent, agg?.nextEvent);
+    return res.json(roundDoc);
+  } catch (e) {
+    console.error("[PATCH /physical/events/:eventId/rounds/:roundId]", e);
+    return res.status(500).json({ error: "round_update_failed" });
   }
 });
 

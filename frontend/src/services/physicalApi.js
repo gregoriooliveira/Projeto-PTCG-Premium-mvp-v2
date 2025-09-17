@@ -20,3 +20,13 @@ export const postPhysicalRound = async (eventId, payload) => {
     body: JSON.stringify(payload),
   });
 };
+
+export const updatePhysicalRound = async (eventId, roundId, payload) => {
+  return api(
+    `/api/physical/events/${encodeURIComponent(eventId)}/rounds/${encodeURIComponent(roundId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    },
+  );
+};
