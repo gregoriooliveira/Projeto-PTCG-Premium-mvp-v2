@@ -51,16 +51,43 @@ function eventCounts(ev = {}){
   );
 }
 
+function extractPokemonSlug(raw) {
+  let value = "";
+  if (typeof raw === "string") value = raw;
+  else if (raw && typeof raw === "object") {
+    for (const key of ["slug", "name", "id"]) {
+      const candidate = raw[key];
+      if (typeof candidate === "string" && candidate.trim()) {
+        value = candidate;
+        break;
+      }
+    }
+  }
+  if (!value) return "";
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug;
+}
+
 function normalizePokemonHints(...sources){
+  const seen = new Set();
+  const normalized = [];
   for (const source of sources) {
     if (!Array.isArray(source)) continue;
-    const normalized = source
-      .map(p => (typeof p === "string" ? p.trim() : ""))
-      .filter(Boolean)
-      .slice(0, 2);
-    if (normalized.length) return normalized;
+    for (const raw of source) {
+      if (normalized.length >= 2) break;
+      const slug = extractPokemonSlug(raw);
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      normalized.push(slug);
+    }
+    if (normalized.length >= 2) break;
   }
-  return null;
+  return normalized.length ? normalized : null;
 }
 
 /** Create an event (log) */
@@ -477,6 +504,8 @@ r.get("/decks/:deck/logs", async (req, res) => {
       .get();
     const logs = snap.docs.map(doc => {
       const ev = doc.data() || {};
+      const userPokemons = normalizePokemonHints(ev.pokemons, ev.userPokemons);
+      const opponentPokemons = normalizePokemonHints(ev.opponentPokemons, ev.oppPokemons);
       return {
         id: ev.eventId || ev.id || null,
         date: ev.date || ev.createdAt || null,
@@ -487,7 +516,9 @@ r.get("/decks/:deck/logs", async (req, res) => {
         round: ev.round || null,
         deckName: ev.deckName || ev.playerDeckName || null,
         eventName: ev.tourneyName || ev.tournamentName || ev.event || null,
-        isOnlineTourney: !!ev.isOnlineTourney
+        isOnlineTourney: !!ev.isOnlineTourney,
+        userPokemons,
+        opponentPokemons
       };
     });
     res.json(logs);
@@ -515,18 +546,24 @@ r.get("/logs", async (req, res) => {
     const docs = snap.docs.map(d => d.data());
     const sliced = offset ? docs.slice(offset) : docs;
 
-    const rows = sliced.slice(0, limit).map(ev => ({
-      id: ev.eventId || ev.id || null,
-      createdAt: ev.createdAt || ev.date || null,
-      date: ev.date || ev.createdAt || null,
-      deck: ev.deckName || ev.playerDeckName || ev.myDeck || null,
-      opponentDeck: ev.opponentDeck || ev.opponentDeckName || ev.deck_opponent || null,
-      score: ev.score || ev.placar || null,
-      result: ev.result || ev.outcome || null,
-      event: ev.event || ev.tournament || ev.tourneyName || ev.tournamentName || ev.liveEvent || null,
-      opponent: ev.opponent || ev.opponentName || ev.name || null,
-      you: ev.you || ev.player || ev.user || null
-    }));
+    const rows = sliced.slice(0, limit).map(ev => {
+      const userPokemons = normalizePokemonHints(ev.pokemons, ev.userPokemons);
+      const opponentPokemons = normalizePokemonHints(ev.opponentPokemons, ev.oppPokemons);
+      return {
+        id: ev.eventId || ev.id || null,
+        createdAt: ev.createdAt || ev.date || null,
+        date: ev.date || ev.createdAt || null,
+        deck: ev.deckName || ev.playerDeckName || ev.myDeck || null,
+        opponentDeck: ev.opponentDeck || ev.opponentDeckName || ev.deck_opponent || null,
+        score: ev.score || ev.placar || null,
+        result: ev.result || ev.outcome || null,
+        event: ev.event || ev.tournament || ev.tourneyName || ev.tournamentName || ev.liveEvent || null,
+        opponent: ev.opponent || ev.opponentName || ev.name || null,
+        you: ev.you || ev.player || ev.user || null,
+        userPokemons,
+        opponentPokemons
+      };
+    });
 
     return res.json({ ok: true, total: docs.length, rows });
   } catch (e) {
