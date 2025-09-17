@@ -92,6 +92,23 @@ export async function resolveIconsFromDeck(deckName, pokemonHints) {
     pokemonHints.filter(Boolean).slice(0,2).forEach(push);
   }
 
+  if (!candidates.length && deckName) {
+    const base = String(deckName || "");
+    const cleanedSeparators = base
+      .replace(/\s+vs\.?\s+/gi, "/")
+      .replace(/\s+x\s+/gi, "/")
+      .replace(/\s+&\s+/g, "/");
+    cleanedSeparators
+      .split(/[\/]/)
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .forEach(push);
+
+    if (!candidates.length) {
+      push(base);
+    }
+  }
+
   // Final safety: only valid slugs
   const valid = candidates.filter(s => /^[a-z0-9-]+$/.test(s));
   const out = await Promise.all((valid.length ? valid : [""]).slice(0,2).map(getPokemonIcon));

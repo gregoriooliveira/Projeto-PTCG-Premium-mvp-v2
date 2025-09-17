@@ -18,7 +18,7 @@ vi.mock("lucide-react", () => ({
   Upload: () => null,
 }));
 
-import { countsFrom, topDeckByWinRate, winRate } from "./PhysicalPageV2.jsx";
+import { aggregatePokemonHintsForDeck, countsFrom, topDeckByWinRate, winRate } from "./PhysicalPageV2.jsx";
 
 describe("PhysicalPageV2 helper utilities", () => {
   it("countsFrom normaliza tokens variados de resultado", () => {
@@ -61,5 +61,23 @@ describe("PhysicalPageV2 helper utilities", () => {
 
     const best = topDeckByWinRate(matches);
     expect(best).toMatchObject({ deckKey: "Beta", winRate: 50, games: 4 });
+  });
+
+  it("aggregatePokemonHintsForDeck combina todas as entradas do deck vencedor", () => {
+    const matches = [
+      { playerDeck: "Alpha", userPokemons: ["gardevoir", "mewtwo"] },
+      { playerDeck: "Alpha", userPokemons: ["gardevoir", "miraidon"] },
+      { playerDeck: "Beta", userPokemons: ["charizard"] },
+      { playerDeck: "Alpha", userPokemons: ["gardevoir", "zacian", "mewtwo"] },
+      { playerDeck: "Alpha", userPokemons: ["  Gardevoir  "] },
+    ];
+
+    const hints = aggregatePokemonHintsForDeck(matches, "Alpha");
+    expect(hints).toEqual(["gardevoir", "mewtwo", "miraidon", "zacian"]);
+  });
+
+  it("aggregatePokemonHintsForDeck retorna vazio quando não encontra correspondências", () => {
+    expect(aggregatePokemonHintsForDeck([], "Gamma")).toEqual([]);
+    expect(aggregatePokemonHintsForDeck([{ playerDeck: "Alpha", userPokemons: ["lugia"] }], "Gamma")).toEqual([]);
   });
 });
