@@ -2,6 +2,7 @@
 // Prefers explicit pokemonHints over deck names.
 
 const MEM = new Map();
+const HYPHENATED_MON_SLUGS = new Set(["chien-pao","chi-yu","wo-chien","ting-lu"]);
 
 export const FALLBACK =
   'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96"><rect width="96" height="96" rx="48" fill="%23292929"/><circle cx="48" cy="48" r="30" fill="%23fff"/><circle cx="48" cy="48" r="12" fill="%23292929"/></svg>';
@@ -83,6 +84,12 @@ export async function getPokemonIcon(nameLike) {
   return fetchIcon(slug);
 }
 
+const normalizeDeckSlug = (name) => String(name || "")
+  .toLowerCase()
+  .replace(/[^a-z0-9-]+/g, "-")
+  .replace(/-+/g, "-")
+  .replace(/^-|-$/g, "");
+
 // Resolve up to two icons. If hints are provided, they are used with absolute priority.
 export async function resolveIconsFromDeck(deckName, pokemonHints) {
   const candidates = [];
@@ -93,13 +100,32 @@ export async function resolveIconsFromDeck(deckName, pokemonHints) {
   }
 
   if (candidates.length === 0) {
-    // Fallback: parse from deck name
-    String(deckName || "")
-      .split("/")
-      .map((p)=>p.trim())
-      .filter(Boolean)
-      .slice(0,2)
-      .forEach(push);
+    const slugFromDeck = normalizeDeckSlug(deckName);
+    let hyphenMatch;
+    for (const slug of HYPHENATED_MON_SLUGS) {
+      if (slugFromDeck === slug || slugFromDeck.startsWith(`${slug}-`)) {
+        hyphenMatch = slug;
+        break;
+      }
+    }
+
+    if (hyphenMatch) {
+      push(hyphenMatch);
+      const remainder = slugFromDeck.slice(hyphenMatch.length).replace(/^-+/, "");
+      if (remainder) {
+        push(remainder.replace(/-/g, " "));
+      }
+    }
+
+    if (candidates.length === 0) {
+      // Fallback: parse from deck name using explicit separators
+      String(deckName || "")
+        .split("/")
+        .map((p)=>p.trim())
+        .filter(Boolean)
+        .slice(0,2)
+        .forEach(push);
+    }
   }
 
   // Final safety: only valid slugs

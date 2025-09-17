@@ -6,12 +6,21 @@ const TRAINERS = new Set([
   "mela","katy","larry","tulip","hassel","rika","poppy","kofu","nemona","geeta"
 ]);
 
+const HYPHENATED_MON = ["chien-pao", "chi-yu", "wo-chien", "ting-lu"].map(slug => ({
+  slug,
+  parts: slug.split("-")
+}));
+const HYPHENATED_SET = new Set(HYPHENATED_MON.map(({ slug }) => slug));
+
 function titleCaseSlug(slug = ""){
-  return String(slug)
+  const raw = String(slug || "");
+  const normalized = raw.toLowerCase();
+  const words = raw
     .split("-")
     .filter(Boolean)
-    .map(w => w ? w[0].toUpperCase() + w.slice(1) : w)
-    .join(" ");
+    .map(w => (w ? w[0].toUpperCase() + w.slice(1) : w));
+  const joiner = HYPHENATED_SET.has(normalized) ? "-" : " ";
+  return words.join(joiner);
 }
 
 const TWO_WORD_MON = new Set([
@@ -20,7 +29,30 @@ const TWO_WORD_MON = new Set([
   "iron jugulis","iron moth","iron bundle","iron thorns"
 ]);
 
+function findHyphenated(tokens){
+  return HYPHENATED_MON.find(entry =>
+    tokens.length >= entry.parts.length &&
+    entry.parts.every((part, idx) => tokens[idx] === part)
+  );
+}
+
 function splitPokemons(tokens){
+  if (!tokens.length) return "";
+
+  const hyphen = findHyphenated(tokens);
+  if (hyphen){
+    const restTokens = tokens.slice(hyphen.parts.length);
+    if (restTokens.length){
+      const restHyphen = findHyphenated(restTokens);
+      const restSlug = restTokens.join("-");
+      const restFormatted = restHyphen && restHyphen.parts.length === restTokens.length
+        ? titleCaseSlug(restHyphen.slug)
+        : titleCaseSlug(restSlug);
+      return [titleCaseSlug(hyphen.slug), restFormatted].filter(Boolean).join(" / ");
+    }
+    return titleCaseSlug(hyphen.slug);
+  }
+
   const joined = tokens.join(" ");
   // Try known two-word mon at start
   for (const name of TWO_WORD_MON){
