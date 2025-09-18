@@ -22,6 +22,7 @@ import {
   aggregatePokemonHintsForDeck,
   countsFrom,
   deriveTopDeckHints,
+  selectStoreFocusedMatches,
   topDeckByWinRate,
   winRate,
 } from "./PhysicalPageV2.jsx";
@@ -102,5 +103,20 @@ describe("PhysicalPageV2 helper utilities", () => {
     });
 
     expect(hints).toEqual(["gardevoir", "zacian"]);
+  });
+
+  it("selectStoreFocusedMatches descarta partidas sem loja e normaliza tipo", () => {
+    const matches = [
+      { id: "withLocal", storeName: "Liga Center", eventType: "Liga Local" },
+      { id: "noStore", eventType: "Liga Local" },
+      { id: "blankStore", storeName: "   ", eventType: "cup" },
+      { id: "regional", storeName: "Regional Hub", eventType: "regional" },
+      { id: "challenge", storeName: "Challenge HQ", eventType: "Challenge" },
+      { id: "cup", storeName: "Cup Place", eventType: "CUP" },
+    ];
+
+    const filtered = selectStoreFocusedMatches(matches);
+
+    expect(filtered.map((m) => m.id)).toEqual(["withLocal", "challenge", "cup"]);
   });
 });
