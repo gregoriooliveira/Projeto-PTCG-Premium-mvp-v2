@@ -131,6 +131,96 @@ const deriveDeckLabel = ({ keyCandidates = [], nameCandidates = [] } = {}) => {
   return { label: fallback ? fallback.trim() : "", key: "" };
 };
 
+const COUNT_SOURCE_KEYS = ["counts", "stats", "summary", "results", "aggregates", "aggregate", "totals"];
+
+const pickNumericValue = (obj, keys) => {
+  if (!obj || typeof obj !== "object") return null;
+  for (const key of keys) {
+    if (obj == null) continue;
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const value = obj[key];
+      const num = Number(value);
+      if (Number.isFinite(num)) {
+        return num;
+      }
+    }
+  }
+  return null;
+};
+
+const normalizeCountsPayload = (payload) => {
+  if (!payload || typeof payload !== "object") return null;
+  const w = pickNumericValue(payload, ["W", "w", "win", "wins", "victories", "vitorias"]);
+  const l = pickNumericValue(payload, ["L", "l", "loss", "losses", "derrotas"]);
+  const t = pickNumericValue(payload, ["T", "t", "tie", "ties", "empates", "draws"]);
+  const total = pickNumericValue(payload, ["total", "Total", "TOTAL", "games", "matches", "partidas", "jogos"]);
+  if (w == null && l == null && t == null && total == null) return null;
+  const W = w != null && Number.isFinite(w) ? Math.max(0, w) : 0;
+  const L = l != null && Number.isFinite(l) ? Math.max(0, l) : 0;
+  const T = t != null && Number.isFinite(t) ? Math.max(0, t) : 0;
+  const ensuredTotal = total != null && Number.isFinite(total) ? Math.max(0, total) : W + L + T;
+  return { W, L, T, total: ensuredTotal };
+};
+
+const extractCountsFromSource = (source, visited = new WeakSet()) => {
+  if (!source || typeof source !== "object") return null;
+  if (visited.has(source)) return null;
+  visited.add(source);
+  if (Array.isArray(source)) {
+    for (const entry of source) {
+      const nested = extractCountsFromSource(entry, visited);
+      if (nested) return nested;
+    }
+    return null;
+  }
+  for (const key of COUNT_SOURCE_KEYS) {
+    if (key in source) {
+      const nested = extractCountsFromSource(source[key], visited);
+      if (nested) return nested;
+    }
+  }
+  return normalizeCountsPayload(source);
+};
+
+const toLowerCounts = (counts) => {
+  const normalized = normalizeCountsPayload(counts);
+  if (!normalized) return null;
+  const total = Number.isFinite(normalized.total) ? normalized.total : normalized.W + normalized.L + normalized.T;
+  return { w: normalized.W, l: normalized.L, t: normalized.T, total };
+};
+
+const sumUpperCounts = (entries = []) => {
+  if (!Array.isArray(entries)) return null;
+  let W = 0;
+  let L = 0;
+  let T = 0;
+  let hasData = false;
+  for (const entry of entries) {
+    if (!entry) continue;
+    const counts = extractCountsFromSource(entry);
+    if (!counts) continue;
+    W += Number(counts.W || 0);
+    L += Number(counts.L || 0);
+    T += Number(counts.T || 0);
+    hasData = true;
+  }
+  if (!hasData) return null;
+  return { W, L, T, total: W + L + T };
+};
+
+const resultFromCounts = (counts = {}) => {
+  const normalized = normalizeCountsPayload(counts);
+  if (!normalized) return null;
+  const { W = 0, L = 0, T = 0 } = normalized;
+  if (W > L && W >= T && W > 0) return "W";
+  if (L > W && L >= T && L > 0) return "L";
+  if (T > 0 && T >= W && T >= L) return "T";
+  if (W > 0 && L === 0 && T === 0) return "W";
+  if (L > 0 && W === 0 && T === 0) return "L";
+  if (T > 0 && W === 0 && L === 0) return "T";
+  return null;
+};
+
 const selectStoreNameFromDetail = (detail = {}, row = {}) => {
   const raw =
     detail.storeOrCity ||
@@ -166,14 +256,26 @@ const enrichLogRowWithDetail = (row = {}, detail = {}) => {
     enriched.type = eventTypeCandidate;
   }
 
+  const countsCandidates = [extractCountsFromSource(row), extractCountsFromSource(detail)];
+  let bestCounts = null;
+  for (const candidate of countsCandidates) {
+    const normalized = normalizeCountsPayload(candidate);
+    if (!normalized) continue;
+    if (!bestCounts || normalized.total > bestCounts.total) {
+      bestCounts = normalized;
+    }
+  }
+  if (bestCounts) {
+    enriched.counts = { ...bestCounts };
+  }
+
   return enriched;
 };
 
 const sumCounts = (counts = {}) => {
-  const w = Number(counts?.w) || 0;
-  const l = Number(counts?.l) || 0;
-  const t = Number(counts?.t) || 0;
-  return w + l + t;
+  const normalized = normalizeCountsPayload(counts);
+  if (!normalized) return 0;
+  return normalized.total != null ? normalized.total : normalized.W + normalized.L + normalized.T;
 };
 
 const computeRoundOutcome = (round = {}) => {
@@ -195,7 +297,13 @@ const computeRoundOutcome = (round = {}) => {
   return null;
 };
 
-const computeCountsFromRounds = (rounds = [], fallbackMatches = []) => {
+const computeCountsFromRounds = (rounds = [], fallbackMatches = [], detail = {}) => {
+  const aggregatedRoundCounts = sumUpperCounts(rounds);
+  if (aggregatedRoundCounts) {
+    const lower = toLowerCounts(aggregatedRoundCounts);
+    if (lower) return lower;
+  }
+
   let w = 0;
   let l = 0;
   let t = 0;
@@ -207,25 +315,41 @@ const computeCountsFromRounds = (rounds = [], fallbackMatches = []) => {
       else if (outcome === "L") l += 1;
       else if (outcome === "T") t += 1;
     }
+    if (w || l || t) {
+      return { w, l, t, total: w + l + t };
+    }
   }
 
-  if (w || l || t) {
-    return { w, l, t };
+  const detailCounts = toLowerCounts(extractCountsFromSource(detail));
+  if (detailCounts) {
+    return detailCounts;
+  }
+
+  const aggregatedMatchCounts = sumUpperCounts(fallbackMatches);
+  if (aggregatedMatchCounts) {
+    const lower = toLowerCounts(aggregatedMatchCounts);
+    if (lower) return lower;
   }
 
   if (Array.isArray(fallbackMatches) && fallbackMatches.length) {
+    let mw = 0;
+    let ml = 0;
+    let mt = 0;
     for (const match of fallbackMatches) {
       const outcome =
         normalizeResultToken(match?.result) ||
         normalizeResultToken(match?.outcome) ||
         normalizeResultToken(match?.finalResult);
-      if (outcome === "W") w += 1;
-      else if (outcome === "L") l += 1;
-      else if (outcome === "T") t += 1;
+      if (outcome === "W") mw += 1;
+      else if (outcome === "L") ml += 1;
+      else if (outcome === "T") mt += 1;
+    }
+    if (mw || ml || mt) {
+      return { w: mw, l: ml, t: mt, total: mw + ml + mt };
     }
   }
 
-  return { w, l, t };
+  return { w: 0, l: 0, t: 0, total: 0 };
 };
 
 const extractEventTimestamp = (detail = {}, sampleRow = {}) => {
@@ -339,7 +463,7 @@ const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
     const dayKey = dayKeyFromTimestamp(timestamp);
     const dateKey = dayKey !== "sem-data" ? dayKey : null;
 
-    const counts = computeCountsFromRounds(rounds, rows);
+    const counts = computeCountsFromRounds(rounds, rows, detail);
 
     const eventTypeRaw =
       detail.type ||
@@ -422,10 +546,11 @@ const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
 };
 
 function PartidasChips({ counts = {} }) {
-  const w = Number(counts?.w) || 0;
-  const l = Number(counts?.l) || 0;
-  const t = Number(counts?.t) || 0;
-  const total = sumCounts(counts);
+  const normalized = normalizeCountsPayload(counts) || { W: 0, L: 0, T: 0, total: 0 };
+  const w = normalized.W || 0;
+  const l = normalized.L || 0;
+  const t = normalized.T || 0;
+  const total = Number.isFinite(normalized.total) ? normalized.total : w + l + t;
 
   return (
     <div className="flex items-center gap-2 text-xs flex-wrap">
@@ -538,10 +663,13 @@ const buildMatchEntryFromLog = (match, index) => {
     match?.opponentPokemons || match?.oppPokemons || match?.enemyPokemons,
   );
 
+  const countsFromMatch = normalizeCountsPayload(match?.counts) || extractCountsFromSource(match);
+
   const result =
     normalizeResultToken(match?.result) ||
     normalizeResultToken(match?.outcome) ||
     normalizeResultToken(match?.finalResult) ||
+    resultFromCounts(countsFromMatch) ||
     "";
 
   const roundLabel = (() => {
@@ -561,6 +689,7 @@ const buildMatchEntryFromLog = (match, index) => {
     userPokemons,
     opponentPokemons,
     result,
+    counts: countsFromMatch ? { ...countsFromMatch } : null,
   };
 };
 
@@ -937,10 +1066,11 @@ export default function PhysicalStoreEventsPage() {
               return "—";
             })();
 
-            const renderResultTone = (result) => {
-              if (result === "W") return "text-emerald-400";
-              if (result === "L") return "text-rose-400";
-              if (result === "T") return "text-amber-300";
+            const renderResultTone = (result, counts) => {
+              const token = result || resultFromCounts(counts);
+              if (token === "W") return "text-emerald-400";
+              if (token === "L") return "text-rose-400";
+              if (token === "T") return "text-amber-300";
               return "text-zinc-300";
             };
 
@@ -1009,6 +1139,11 @@ export default function PhysicalStoreEventsPage() {
                           window.location.hash = `#/tcg-fisico/eventos/${ev.id}`;
                         };
 
+                        const counts = match.counts;
+                        const displayResult = counts
+                          ? `${Number(counts.W || 0)}/${Number(counts.L || 0)}/${Number(counts.T || 0)}`
+                          : match.result || "—";
+
                         return (
                           <button
                             type="button"
@@ -1032,8 +1167,8 @@ export default function PhysicalStoreEventsPage() {
                                 pokemonHints={match.userPokemons}
                               />
                             </div>
-                            <div className={`text-right font-semibold ${renderResultTone(match.result)}`}>
-                              {match.result || "—"}
+                            <div className={`text-right font-semibold ${renderResultTone(match.result, counts)}`}>
+                              {displayResult}
                             </div>
                           </button>
                         );

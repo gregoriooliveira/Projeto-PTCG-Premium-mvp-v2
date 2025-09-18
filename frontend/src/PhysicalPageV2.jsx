@@ -12,19 +12,111 @@ import { getPhysicalLogs, getPhysicalSummary, normalizeDeckKey } from "./service
 import { subscribePhysicalRoundsChanged } from "./utils/physicalRoundsBus.js";
 
 /** Helpers locais para contagem e top deck */
-function wlCounts(matches = []) {
-  if (!Array.isArray(matches) || matches.length === 0) {
-    return { W: 0, L: 0, T: 0, total: 0 };
+const COUNT_SOURCE_KEYS = ["counts", "stats", "summary", "results", "aggregates", "aggregate", "totals"];
+
+const pickNumericValue = (obj, keys) => {
+  if (!obj || typeof obj !== "object") return null;
+  for (const key of keys) {
+    if (obj == null) continue;
+    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+      const value = obj[key];
+      const num = Number(value);
+      if (Number.isFinite(num)) {
+        return num;
+      }
+    }
   }
+  return null;
+};
+
+const normalizeCountsPayload = (payload) => {
+  if (!payload || typeof payload !== "object") return null;
+  const w = pickNumericValue(payload, ["W", "w", "win", "wins", "victories", "vitorias"]);
+  const l = pickNumericValue(payload, ["L", "l", "loss", "losses", "derrotas"]);
+  const t = pickNumericValue(payload, ["T", "t", "tie", "ties", "empates", "draws"]);
+  const total = pickNumericValue(payload, ["total", "Total", "TOTAL", "games", "matches", "partidas", "jogos"]);
+  if (w == null && l == null && t == null && total == null) return null;
+  const W = w != null && Number.isFinite(w) ? Math.max(0, w) : 0;
+  const L = l != null && Number.isFinite(l) ? Math.max(0, l) : 0;
+  const T = t != null && Number.isFinite(t) ? Math.max(0, t) : 0;
+  const ensuredTotal = total != null && Number.isFinite(total) ? Math.max(0, total) : W + L + T;
+  return { W, L, T, total: ensuredTotal };
+};
+
+const extractCountsFromSource = (source, visited = new WeakSet()) => {
+  if (!source || typeof source !== "object") return null;
+  if (visited.has(source)) return null;
+  visited.add(source);
+  if (Array.isArray(source)) {
+    for (const entry of source) {
+      const nested = extractCountsFromSource(entry, visited);
+      if (nested) return nested;
+    }
+    return null;
+  }
+  for (const key of COUNT_SOURCE_KEYS) {
+    if (key in source) {
+      const nested = extractCountsFromSource(source[key], visited);
+      if (nested) return nested;
+    }
+  }
+  return normalizeCountsPayload(source);
+};
+
+const countsFromToken = (token) => {
+  if (token === "W") return { W: 1, L: 0, T: 0, total: 1 };
+  if (token === "L") return { W: 0, L: 1, T: 0, total: 1 };
+  if (token === "T") return { W: 0, L: 0, T: 1, total: 1 };
+  return null;
+};
+
+const toCountsShape = (candidate) => {
+  if (!candidate || typeof candidate !== "object") return null;
+  const W = Math.max(0, Number(candidate.W || 0));
+  const L = Math.max(0, Number(candidate.L || 0));
+  const T = Math.max(0, Number(candidate.T || 0));
+  const totalCandidate = Number(candidate.total);
+  const total = Number.isFinite(totalCandidate) ? Math.max(0, totalCandidate) : W + L + T;
+  return { W, L, T, total };
+};
+
+function wlCounts(matches = []) {
+  const list = Array.isArray(matches) ? matches : [];
   let W = 0;
   let L = 0;
   let T = 0;
-  for (const match of matches) {
+  let hasData = false;
+
+  for (const match of list) {
+    if (!match) continue;
+    const counts = extractCountsFromSource(match);
+    if (counts) {
+      const normalized = toCountsShape(counts);
+      if (normalized) {
+        W += normalized.W;
+        L += normalized.L;
+        T += normalized.T;
+        hasData = true;
+        continue;
+      }
+    }
     const token = normalizeResultToken(match?.result);
-    if (token === "W") W += 1;
-    else if (token === "L") L += 1;
-    else if (token === "T") T += 1;
+    if (token === "W") {
+      W += 1;
+      hasData = true;
+    } else if (token === "L") {
+      L += 1;
+      hasData = true;
+    } else if (token === "T") {
+      T += 1;
+      hasData = true;
+    }
   }
+
+  if (!hasData) {
+    return { W: 0, L: 0, T: 0, total: 0 };
+  }
+
   return { W, L, T, total: W + L + T };
 }
 
@@ -194,11 +286,13 @@ const selectStoreName = (detail = {}, row = {}) => {
 const mapLogRowToMatch = (row = {}, detail = {}) => {
   const eventId = row?.eventId || row?.id || detail?.eventId || detail?.id || null;
   if (!eventId) return null;
+  const countsFromRow = extractCountsFromSource(row);
+  const countsFromDetail = extractCountsFromSource(detail);
   const resultToken =
     normalizeResultToken(row?.result) ||
-    resultFromCounts(row?.counts) ||
+    (countsFromRow ? resultFromCounts(countsFromRow) : null) ||
     normalizeResultToken(detail?.result) ||
-    resultFromCounts(detail?.counts) ||
+    (countsFromDetail ? resultFromCounts(countsFromDetail) : null) ||
     null;
   const playerDeck = row?.playerDeck || row?.deck || detail?.deckName || detail?.deck || null;
   const date =
@@ -209,11 +303,27 @@ const mapLogRowToMatch = (row = {}, detail = {}) => {
     parseDateValue(detail?.createdAt) ||
     Date.now();
 
+  const storedCounts = (() => {
+    const candidates = [countsFromRow, countsFromDetail];
+    let best = null;
+    for (const candidate of candidates) {
+      const normalized = toCountsShape(candidate);
+      if (!normalized) continue;
+      if (!best || normalized.total > best.total) {
+        best = normalized;
+      }
+    }
+    if (best) return best;
+    const fallback = toCountsShape(countsFromToken(resultToken));
+    return fallback || null;
+  })();
+
   return {
     id: eventId,
     eventId,
     date,
     result: resultToken,
+    counts: storedCounts,
     eventType: normalizeEventTypeKey(detail?.type || detail?.tipo || row?.eventType || row?.type),
     playerDeck: playerDeck ? String(playerDeck).trim() : "",
     storeName: selectStoreName(detail, row),
@@ -562,15 +672,18 @@ const LocalLeagueWidget = ({ manualMatches }) => {
     <WidgetCard title={<a href="#/tcg-fisico/eventos/loja" className="underline decoration-dotted hover:opacity-90">Liga Local</a>} iconClass="text-sky-400" icon={CalendarDays} className="col-span-12 md:col-span-6">
       <div className="space-y-2">
         {rows.length === 0 && <div className="text-sm text-zinc-400">Sem registros de liga local.</div>}
-        {rows.map(m => (
-          <div key={m.id} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
-            <div className="col-span-4 text-sm text-zinc-200">{fmtMDY(m.date)}</div>
-            <div className="col-span-4 flex justify-center text-sm text-zinc-200">
-              <LinkSoftUnderline href={m.storeName ? `#/tcg-fisico/eventos/loja/${encodeURIComponent(m.storeName)}` : '#'} title="Abrir loja">{m.storeName || '—'}</LinkSoftUnderline>
+        {rows.map((m) => {
+          const eventCounts = wlCounts([m]);
+          return (
+            <div key={m.id} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
+              <div className="col-span-4 text-sm text-zinc-200">{fmtMDY(m.date)}</div>
+              <div className="col-span-4 flex justify-center text-sm text-zinc-200">
+                <LinkSoftUnderline href={m.storeName ? `#/tcg-fisico/eventos/loja/${encodeURIComponent(m.storeName)}` : '#'} title="Abrir loja">{m.storeName || '—'}</LinkSoftUnderline>
+              </div>
+              <div className="col-span-4 flex justify-end"><WLTriplet {...eventCounts} /></div>
             </div>
-            <div className="col-span-4 flex justify-end"><WLTriplet W={m.result==='W'?1:0} L={m.result==='L'?1:0} T={m.result==='T'?1:0}/></div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </WidgetCard>
   );
@@ -586,15 +699,18 @@ const CupChallengeWidget = ({ manualMatches }) => {
     <WidgetCard title={<a href="#/tcg-fisico/eventos/loja" className="underline decoration-dotted hover:opacity-90">Cup / Challenge</a>} icon={Trophy} iconClass="text-yellow-400" className="col-span-12 md:col-span-6">
       <div className="space-y-2">
         {rows.length === 0 && <div className="text-sm text-zinc-400">Sem registros de Cup/Challenge.</div>}
-        {rows.map(m => (
-          <div key={m.id} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
-            <div className="col-span-4 text-sm text-zinc-200">{fmtMDY(m.date)}</div>
-            <div className="col-span-4 flex justify-center text-sm text-zinc-200">
-              <LinkSoftUnderline href={m.storeName ? `#/tcg-fisico/eventos/loja/${encodeURIComponent(m.storeName)}` : '#'} title="Abrir loja">{m.storeName || '—'}</LinkSoftUnderline>
+        {rows.map((m) => {
+          const eventCounts = wlCounts([m]);
+          return (
+            <div key={m.id} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
+              <div className="col-span-4 text-sm text-zinc-200">{fmtMDY(m.date)}</div>
+              <div className="col-span-4 flex justify-center text-sm text-zinc-200">
+                <LinkSoftUnderline href={m.storeName ? `#/tcg-fisico/eventos/loja/${encodeURIComponent(m.storeName)}` : '#'} title="Abrir loja">{m.storeName || '—'}</LinkSoftUnderline>
+              </div>
+              <div className="col-span-4 flex justify-end"><WLTriplet {...eventCounts} /></div>
             </div>
-            <div className="col-span-4 flex justify-end"><WLTriplet W={m.result==='W'?1:0} L={m.result==='L'?1:0} T={m.result==='T'?1:0}/></div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </WidgetCard>
   );
@@ -627,22 +743,25 @@ const AllPhysicalEntriesPagedWidget = ({ manualMatches }) => {
       </div>
       <div className="space-y-2 min-h-[260px]">
         {slice.length === 0 && <div className="text-sm text-zinc-400">Sem registros.</div>}
-        {slice.map(m => (
-          <div key={m.id} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
-            {/* Data como link suave */}
-            <div className="col-span-3 text-sm text-zinc-200">
-              <LinkSoftUnderline href={`#/tcg-fisico/eventos/data/${fmtYMD(m.date)}`} title="Abrir resumo do dia">{fmtMDY(m.date)}</LinkSoftUnderline>
+        {slice.map((m) => {
+          const eventCounts = wlCounts([m]);
+          return (
+            <div key={m.id} className="grid grid-cols-12 items-center gap-2 py-2 border-b border-zinc-800/60 last:border-b-0">
+              {/* Data como link suave */}
+              <div className="col-span-3 text-sm text-zinc-200">
+                <LinkSoftUnderline href={`#/tcg-fisico/eventos/data/${fmtYMD(m.date)}`} title="Abrir resumo do dia">{fmtMDY(m.date)}</LinkSoftUnderline>
+              </div>
+              {/* Tipo */}
+              <div className="col-span-3 text-center text-sm text-zinc-200">{labelFromKind(m.eventType)}</div>
+              {/* Resultado unitário */}
+              <div className="col-span-3 flex justify-center"><WLTriplet {...eventCounts} /></div>
+              {/* Deck (avatar placeholder + nome) */}
+              <div className="col-span-3 flex items-center justify-end gap-2">
+                <DeckLabel deckName={m.playerDeck} pokemonHints={m.userPokemons} />
+              </div>
             </div>
-            {/* Tipo */}
-            <div className="col-span-3 text-center text-sm text-zinc-200">{labelFromKind(m.eventType)}</div>
-            {/* Resultado unitário */}
-            <div className="col-span-3 flex justify-center"><WLTriplet W={m.result==='W'?1:0} L={m.result==='L'?1:0} T={m.result==='T'?1:0}/></div>
-            {/* Deck (avatar placeholder + nome) */}
-            <div className="col-span-3 flex items-center justify-end gap-2">
-              <DeckLabel deckName={m.playerDeck} pokemonHints={m.userPokemons} />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
       {/* Paginação */}
       <div className="mt-4 flex items-center justify-end gap-2">
