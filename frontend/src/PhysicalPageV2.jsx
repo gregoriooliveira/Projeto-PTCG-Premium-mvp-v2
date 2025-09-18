@@ -498,8 +498,8 @@ const NewRecordWidget = () => (
       <img src={PLAY_LOGO} alt="Play! Pokémon" className="h-10 mt-1 object-contain opacity-90 self-start w-auto" />
       <p className="text-sm text-zinc-300 leading-relaxed">
         Aqui você registra partidas presenciais e acompanha seus resultados por <em>tipo de evento</em>.
-        Use os atalhos para <strong>Lojas</strong> e <strong>Torneios</strong> para filtrar suas partidas e navegar pelos eventos. O botão
-        <strong> “Novo Registro”</strong> no topo permite adicionar rapidamente uma nova partida física.
+        Use os atalhos para <strong>Lojas</strong> e <strong>Torneios</strong> para filtrar suas partidas e navegar pelos eventos.
+        Quando quiser adicionar uma nova partida física, utilize as ações de registro disponíveis nas seções abaixo.
       </p>
     </div>
   </WidgetCard>
@@ -850,8 +850,6 @@ export default function PhysicalPageV2({ manualMatches }) {
     [manual, deckKeyCandidates, summaryTopDeck],
   );
 
-  const onNew = () => window.__ptcgNovoRegistroDialogRef?.open();
-
   if (isLoading && manual.length === 0) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-neutral-950 to-black text-zinc-200 p-4">
@@ -902,10 +900,6 @@ export default function PhysicalPageV2({ manualMatches }) {
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-neutral-950 to-black text-zinc-200 p-4">
       <div className="mx-auto max-w-[1600px] grid grid-cols-12 gap-3 md:gap-4">
         {errorBanner}
-        <div className="col-span-12 flex items-center justify-end mb-1">
-          <button onClick={onNew} className="text-sm px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700" aria-label="Novo Registro" title="Novo Registro">+ Novo Registro</button>
-        </div>
-
         <div className="col-span-12 mb-4 md:mb-6">
           <ResumoGeralWidget
             title="Resumo Geral (Físico)"
