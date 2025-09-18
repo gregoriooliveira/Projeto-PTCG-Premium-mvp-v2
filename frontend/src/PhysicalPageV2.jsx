@@ -532,10 +532,29 @@ const TournamentsSummaryWidget = ({ manualMatches }) => {
   );
 };
 
+const STORE_FOCUSED_EVENT_TYPES = new Set(["local", "challenge", "cup"]);
+
+const normalizeStoreEventType = (value) => {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (STORE_FOCUSED_EVENT_TYPES.has(raw)) return raw;
+  const normalized = normalizeEventTypeKey(value);
+  if (normalized && STORE_FOCUSED_EVENT_TYPES.has(normalized)) return normalized;
+  return null;
+};
+
+export const selectStoreFocusedMatches = (manualMatches = []) =>
+  (Array.isArray(manualMatches) ? manualMatches : [])
+    .filter((match) => {
+      if (!match) return false;
+      const storeName = typeof match.storeName === "string" ? match.storeName.trim() : "";
+      if (!storeName) return false;
+      const eventTypeKey = normalizeStoreEventType(match.eventType ?? match.type);
+      return Boolean(eventTypeKey);
+    });
+
 const LocalLeagueWidget = ({ manualMatches }) => {
-  const rows = useMemo(() => (manualMatches || [])
-    .filter(m => m.eventType === 'local')
-    .sort((a,b) => b.date - a.date)
+  const rows = useMemo(() => selectStoreFocusedMatches(manualMatches)
+    .sort((a,b) => (b?.date || 0) - (a?.date || 0))
     .slice(0,5), [manualMatches]);
 
   return (
