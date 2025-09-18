@@ -4,6 +4,11 @@ import { ChevronLeft } from "lucide-react";
 import { format } from "date-fns";
 import ptBR from "date-fns/locale/pt-BR";
 
+import { getEvent } from "../eventsRepo.js";
+import { getPhysicalLogs } from "../services/api.js";
+import { getPhysicalRounds } from "../services/physicalApi.js";
+import { selectStoreFocusedMatches } from "../PhysicalPageV2.jsx";
+
 // Função utilitária para normalizar strings
 const slugify = (s = "") => s
   .normalize("NFD")
@@ -12,7 +17,273 @@ const slugify = (s = "") => s
   .replace(/^-+|-+$/g, "")
   .toLowerCase();
 
-const ALLOWED_TYPES = ["CLP", "CUP", "Challenge", "Liga Local"];
+const DEFAULT_LOG_PAGE_SIZE = 1000;
+const MAX_LOG_PAGE_SIZE = 10000;
+const MAX_LOG_REQUESTS = 200;
+
+const ALLOWED_EVENT_TYPE_KEYS = new Set(["local", "challenge", "cup"]);
+
+const clampPageSize = (value, fallback = DEFAULT_LOG_PAGE_SIZE) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  const bounded = Math.floor(numeric);
+  if (!Number.isFinite(bounded) || bounded <= 0) return fallback;
+  return Math.min(bounded, MAX_LOG_PAGE_SIZE);
+};
+
+const parseDateValue = (value) => {
+  if (value instanceof Date) {
+    const ts = value.getTime();
+    return Number.isNaN(ts) ? null : ts;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (value == null) return null;
+  const str = String(value).trim();
+  if (!str) return null;
+  const numeric = Number(str);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(str);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const normalizeResultToken = (value) => {
+  if (value == null) return null;
+  const token = String(value).trim().toUpperCase();
+  if (!token) return null;
+  if (token === "W" || token === "V" || token.startsWith("WIN")) return "W";
+  if (token === "L" || token === "D" || token.startsWith("LOS")) return "L";
+  if (token === "T" || token === "E" || token.startsWith("EMP") || token.startsWith("TIE")) return "T";
+  return null;
+};
+
+const normalizeStoreEventTypeKey = (value) => {
+  const token = String(value || "").trim().toLowerCase();
+  if (!token) return "";
+  if (token.includes("liga") || token.includes("league") || token.includes("local")) return "local";
+  if (token.includes("amist")) return "local";
+  if (token.includes("treino")) return "local";
+  if (token === "clp" || token.includes("challenge")) return "challenge";
+  if (token.includes("cup") || token.includes("copa")) return "cup";
+  return token;
+};
+
+const computeRoundOutcome = (round = {}) => {
+  const flags = round?.flags || round;
+  if (flags?.bye || flags?.noShow) return "W";
+  const games = [round?.g1, round?.g2, round?.g3];
+  let wins = 0;
+  let losses = 0;
+  let ties = 0;
+  for (const game of games) {
+    const token = normalizeResultToken(game?.result);
+    if (token === "W") wins += 1;
+    else if (token === "L") losses += 1;
+    else if (token === "T") ties += 1;
+  }
+  if (wins > losses) return "W";
+  if (losses > wins) return "L";
+  if (wins || losses || ties) return "T";
+  return null;
+};
+
+const computeCountsFromRounds = (rounds = [], fallbackMatches = []) => {
+  let w = 0;
+  let l = 0;
+  let t = 0;
+
+  if (Array.isArray(rounds) && rounds.length) {
+    for (const round of rounds) {
+      const outcome = computeRoundOutcome(round);
+      if (outcome === "W") w += 1;
+      else if (outcome === "L") l += 1;
+      else if (outcome === "T") t += 1;
+    }
+  }
+
+  if (w || l || t) {
+    return { w, l, t };
+  }
+
+  if (Array.isArray(fallbackMatches) && fallbackMatches.length) {
+    for (const match of fallbackMatches) {
+      const outcome =
+        normalizeResultToken(match?.result) ||
+        normalizeResultToken(match?.outcome) ||
+        normalizeResultToken(match?.finalResult);
+      if (outcome === "W") w += 1;
+      else if (outcome === "L") l += 1;
+      else if (outcome === "T") t += 1;
+    }
+  }
+
+  return { w, l, t };
+};
+
+const extractEventTimestamp = (detail = {}, sampleRow = {}) => {
+  const candidates = [
+    detail.date,
+    detail.startDate,
+    detail.startAt,
+    detail.createdAt,
+    detail.updatedAt,
+    detail.ts,
+    sampleRow.date,
+    sampleRow.createdAt,
+    sampleRow.updatedAt,
+    sampleRow.ts,
+  ];
+
+  for (const value of candidates) {
+    const ts = parseDateValue(value);
+    if (ts != null) return ts;
+  }
+
+  return null;
+};
+
+const dayKeyFromTimestamp = (timestamp) => {
+  if (timestamp == null) return "sem-data";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "sem-data";
+  return date.toISOString().slice(0, 10);
+};
+
+const fetchAllPhysicalLogs = async (options = {}) => {
+  const { pageSize, ...rest } = options || {};
+  const limit = clampPageSize(pageSize);
+  const aggregatedRows = [];
+  let offset = 0;
+  let total = null;
+  let iterations = 0;
+
+  while (iterations < MAX_LOG_REQUESTS) {
+    iterations += 1;
+    const payload = await getPhysicalLogs({ ...rest, limit, offset });
+    const chunk = Array.isArray(payload?.rows)
+      ? payload.rows
+      : Array.isArray(payload)
+      ? payload
+      : [];
+
+    if (chunk.length) {
+      aggregatedRows.push(...chunk);
+    }
+
+    if (typeof payload?.total === "number" && payload.total >= 0) {
+      total = payload.total;
+    }
+
+    offset += chunk.length;
+
+    const expectedTotal = typeof total === "number" && total >= 0 ? total : null;
+    if (expectedTotal != null && offset >= expectedTotal) break;
+    if (chunk.length < limit) break;
+  }
+
+  const ensuredTotal = typeof total === "number" && total >= 0 ? total : aggregatedRows.length;
+
+  return { rows: aggregatedRows, total: ensuredTotal };
+};
+
+const buildGroupedStoreEvents = (rowsByEventId, detailsMap, roundsMap) => {
+  const storeMap = new Map();
+
+  for (const [eventId, rows] of rowsByEventId.entries()) {
+    if (!eventId) continue;
+
+    const detail = detailsMap.get(eventId) || {};
+    const sampleRow = rows[0] || {};
+
+    const roundsCandidate = roundsMap.has(eventId) ? roundsMap.get(eventId) : detail.rounds;
+    const rounds = Array.isArray(roundsCandidate) ? roundsCandidate : [];
+
+    const storeNameRaw =
+      detail.storeName ||
+      detail.storeOrCity ||
+      detail.local ||
+      sampleRow.storeName ||
+      sampleRow.store ||
+      sampleRow.storeOrCity ||
+      "";
+    const storeName = String(storeNameRaw || "").trim();
+    if (!storeName) continue;
+    const slug = slugify(storeName);
+
+    const timestamp = extractEventTimestamp(detail, sampleRow);
+    const dayKey = dayKeyFromTimestamp(timestamp);
+
+    const counts = computeCountsFromRounds(rounds, rows);
+
+    const eventTypeRaw =
+      detail.type ||
+      detail.eventType ||
+      detail.kind ||
+      sampleRow.eventType ||
+      sampleRow.type ||
+      "";
+    const eventTypeKey =
+      normalizeStoreEventTypeKey(eventTypeRaw) ||
+      normalizeStoreEventTypeKey(sampleRow.eventType) ||
+      normalizeStoreEventTypeKey(sampleRow.type);
+
+    const title =
+      detail.name ||
+      detail.title ||
+      detail.eventName ||
+      detail.tourneyName ||
+      sampleRow.title ||
+      sampleRow.eventName ||
+      sampleRow.tourneyName ||
+      sampleRow.notes ||
+      eventId;
+
+    const eventEntry = {
+      id: eventId,
+      title,
+      eventType: eventTypeRaw || sampleRow.eventType || eventTypeKey,
+      eventTypeKey,
+      date: timestamp,
+      rounds,
+      results: counts,
+      detail,
+    };
+
+    let storeEntry = storeMap.get(slug);
+    if (!storeEntry) {
+      storeEntry = { storeName, slug, days: new Map() };
+      storeMap.set(slug, storeEntry);
+    }
+
+    let dayEntry = storeEntry.days.get(dayKey);
+    if (!dayEntry) {
+      dayEntry = { day: dayKey, events: [] };
+      storeEntry.days.set(dayKey, dayEntry);
+    }
+
+    dayEntry.events.push(eventEntry);
+  }
+
+  const dayToTimestamp = (day) => {
+    if (!day || day === "sem-data") return 0;
+    const parsed = Date.parse(day);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  };
+
+  return Array.from(storeMap.values())
+    .map((store) => ({
+      storeName: store.storeName,
+      slug: store.slug,
+      days: Array.from(store.days.values())
+        .map((day) => ({
+          ...day,
+          events: day.events.slice().sort((a, b) => (b.date || 0) - (a.date || 0)),
+        }))
+        .sort((a, b) => dayToTimestamp(b.day) - dayToTimestamp(a.day)),
+    }))
+    .sort((a, b) => a.storeName.localeCompare(b.storeName, "pt-BR"));
+};
 
 function PartidasChips({ w = 0, l = 0, t = 0 }) {
   return (
@@ -24,8 +295,11 @@ function PartidasChips({ w = 0, l = 0, t = 0 }) {
   );
 }
 
-export default function PhysicalStoreEventsPage({ allEvents = [] }) {
+export default function PhysicalStoreEventsPage() {
   const [selectedStore, setSelectedStore] = useState("");
+  const [groupedEvents, setGroupedEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const parse = () => {
@@ -40,19 +314,125 @@ export default function PhysicalStoreEventsPage({ allEvents = [] }) {
     return () => window.removeEventListener("hashchange", parse);
   }, []);
 
-  const stores = useMemo(() => {
-    const set = new Set();
-    allEvents.forEach((ev) => {
-      if (!ALLOWED_TYPES.includes(ev.eventType)) return;
-      if (ev.storeName) set.add(ev.storeName);
-    });
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [allEvents]);
+  useEffect(() => {
+    let isActive = true;
+
+    const load = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const logsResult = await fetchAllPhysicalLogs({ pageSize: DEFAULT_LOG_PAGE_SIZE });
+        if (!isActive) return;
+
+        const rows = Array.isArray(logsResult?.rows) ? logsResult.rows : [];
+        const filteredRows = selectStoreFocusedMatches(rows);
+
+        const rowsByEventId = new Map();
+        for (const row of filteredRows) {
+          const eventId = row?.eventId || row?.id;
+          if (!eventId) continue;
+          if (!rowsByEventId.has(eventId)) rowsByEventId.set(eventId, []);
+          rowsByEventId.get(eventId).push(row);
+        }
+
+        const eventIds = Array.from(rowsByEventId.keys());
+        const detailsMap = new Map();
+        const roundsMap = new Map();
+        const CHUNK_SIZE = 8;
+
+        for (let i = 0; i < eventIds.length; i += CHUNK_SIZE) {
+          const chunk = eventIds.slice(i, i + CHUNK_SIZE);
+          const chunkResults = await Promise.all(
+            chunk.map(async (eventId) => {
+              try {
+                const detail = await getEvent(eventId);
+                return [eventId, detail];
+              } catch (err) {
+                console.warn(`[PhysicalStoreEventsPage] falha ao carregar evento ${eventId}`, err);
+                return [eventId, null];
+              }
+            }),
+          );
+          if (!isActive) return;
+          for (const [eventId, detail] of chunkResults) {
+            detailsMap.set(eventId, detail);
+          }
+        }
+
+        for (let i = 0; i < eventIds.length; i += CHUNK_SIZE) {
+          const chunk = eventIds.slice(i, i + CHUNK_SIZE);
+          const chunkRounds = await Promise.all(
+            chunk.map(async (eventId) => {
+              try {
+                const rounds = await getPhysicalRounds(eventId);
+                return [eventId, Array.isArray(rounds) ? rounds : []];
+              } catch (err) {
+                console.warn(`[PhysicalStoreEventsPage] falha ao carregar rounds do evento ${eventId}`, err);
+                return [eventId, []];
+              }
+            }),
+          );
+          if (!isActive) return;
+          for (const [eventId, rounds] of chunkRounds) {
+            roundsMap.set(eventId, rounds);
+          }
+        }
+
+        const grouped = buildGroupedStoreEvents(rowsByEventId, detailsMap, roundsMap);
+        if (!isActive) return;
+        setGroupedEvents(grouped);
+      } catch (err) {
+        if (!isActive) return;
+        console.error("[PhysicalStoreEventsPage] falha ao carregar logs físicos", err);
+        setError(err instanceof Error ? err : new Error(String(err)));
+        setGroupedEvents([]);
+      } finally {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const stores = useMemo(() =>
+    groupedEvents.map((store) => ({ name: store.storeName, slug: store.slug })),
+  [groupedEvents]);
+
+  const allEvents = useMemo(() => {
+    const rows = [];
+    for (const store of groupedEvents) {
+      for (const day of store.days) {
+        for (const event of day.events) {
+          rows.push({
+            id: event.id,
+            title: event.title,
+            eventType: event.eventType,
+            eventTypeKey: event.eventTypeKey,
+            date: event.date,
+            storeName: store.storeName,
+            storeSlug: store.slug,
+            rounds: event.rounds,
+            results: event.results,
+          });
+        }
+      }
+    }
+    rows.sort((a, b) => (b.date || 0) - (a.date || 0));
+    return rows;
+  }, [groupedEvents]);
 
   const filtered = useMemo(() => {
-    const byType = allEvents.filter((ev) => ALLOWED_TYPES.includes(ev.eventType));
+    const byType = allEvents.filter((ev) =>
+      ALLOWED_EVENT_TYPE_KEYS.has(ev.eventTypeKey || normalizeStoreEventTypeKey(ev.eventType)),
+    );
     if (!selectedStore) return byType;
-    return byType.filter((ev) => slugify(ev.storeName) === selectedStore);
+    return byType.filter((ev) => ev.storeSlug === selectedStore);
   }, [allEvents, selectedStore]);
 
   return (
@@ -81,8 +461,10 @@ export default function PhysicalStoreEventsPage({ allEvents = [] }) {
               }}
             >
               <option value="" disabled>Selecione</option>
-              {stores.map((name) => (
-                <option key={name} value={slugify(name)}>{name}</option>
+              {stores.map((store) => (
+                <option key={store.slug} value={store.slug}>
+                  {store.name}
+                </option>
               ))}
             </select>
           </div>
@@ -93,6 +475,18 @@ export default function PhysicalStoreEventsPage({ allEvents = [] }) {
           >
             Limpar filtro
           </button>
+        )}
+
+        {isLoading && (
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm text-zinc-300">
+            Carregando eventos físicos...
+          </div>
+        )}
+
+        {error && !isLoading && (
+          <div className="rounded-xl border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-300">
+            Falha ao carregar eventos: {error.message || "erro inesperado"}
+          </div>
         )}
 
         {/* KPI CARDS */}
@@ -132,7 +526,7 @@ export default function PhysicalStoreEventsPage({ allEvents = [] }) {
             </div>
           ))}
 
-          {filtered.length === 0 && (
+          {filtered.length === 0 && !isLoading && (
             <div className="p-6 text-zinc-400 text-sm">Nenhum evento encontrado.</div>
           )}
         </div>
