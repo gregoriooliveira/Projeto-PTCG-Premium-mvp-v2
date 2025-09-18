@@ -3,7 +3,7 @@ import { nanoid } from "nanoid";
 import { db } from "../firestore.js";
 import { normalizeDeckKey, normalizeName } from "../utils/normalize.js";
 import { wrPercent, countsAdd, countsOfResult } from "../utils/wr.js";
-import { dateKeyFromTs } from "../utils/tz.js";
+import { dateKeyFromTs, timestampFromDateKey } from "../utils/tz.js";
 import { recomputeAllForEvent } from "./aggregates.js";
 import { authMiddleware } from "../middleware/auth.js";
 
@@ -1006,6 +1006,8 @@ function computeEventTimestamp(ev = {}) {
     if (typeof value === "string") {
       const trimmed = value.trim();
       if (!trimmed) return null;
+      const fromDateKey = timestampFromDateKey(trimmed);
+      if (Number.isFinite(fromDateKey)) return fromDateKey;
       const numeric = Number(trimmed);
       if (Number.isFinite(numeric)) return numeric;
       const parsed = Date.parse(trimmed);
