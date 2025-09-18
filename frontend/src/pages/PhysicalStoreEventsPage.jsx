@@ -127,6 +127,44 @@ const deriveDeckLabel = ({ keyCandidates = [], nameCandidates = [] } = {}) => {
   return { label: fallback ? fallback.trim() : "", key: "" };
 };
 
+const selectStoreNameFromDetail = (detail = {}, row = {}) => {
+  const raw =
+    detail.storeOrCity ||
+    detail.local ||
+    detail.storeName ||
+    detail.store ||
+    row.storeName ||
+    row.storeOrCity ||
+    row.store ||
+    "";
+  const value = String(raw || "").trim();
+  return value || null;
+};
+
+const enrichLogRowWithDetail = (row = {}, detail = {}) => {
+  const enriched = { ...row };
+  const storeName = selectStoreNameFromDetail(detail, row);
+  const normalizedStoreName = storeName || (typeof row?.storeName === "string" ? row.storeName.trim() : "");
+  enriched.storeName = normalizedStoreName || "";
+
+  const eventTypeCandidate =
+    row?.eventType ||
+    row?.type ||
+    detail?.type ||
+    detail?.tipo ||
+    detail?.eventType ||
+    detail?.kind ||
+    "";
+  if (eventTypeCandidate && !enriched.eventType) {
+    enriched.eventType = eventTypeCandidate;
+  }
+  if (eventTypeCandidate && !enriched.type) {
+    enriched.type = eventTypeCandidate;
+  }
+
+  return enriched;
+};
+
 const sumCounts = (counts = {}) => {
   const w = Number(counts?.w) || 0;
   const l = Number(counts?.l) || 0;
@@ -566,17 +604,16 @@ export default function PhysicalStoreEventsPage() {
         if (!isActive) return;
 
         const rows = Array.isArray(logsResult?.rows) ? logsResult.rows : [];
-        const filteredRows = selectStoreFocusedMatches(rows);
 
-        const rowsByEventId = new Map();
-        for (const row of filteredRows) {
+        const eventIdSet = new Set();
+        for (const row of rows) {
           const eventId = row?.eventId || row?.id;
-          if (!eventId) continue;
-          if (!rowsByEventId.has(eventId)) rowsByEventId.set(eventId, []);
-          rowsByEventId.get(eventId).push(row);
+          if (eventId) {
+            eventIdSet.add(eventId);
+          }
         }
 
-        const eventIds = Array.from(rowsByEventId.keys());
+        const eventIds = Array.from(eventIdSet.values());
         const detailsMap = new Map();
         const CHUNK_SIZE = 8;
 
@@ -595,11 +632,27 @@ export default function PhysicalStoreEventsPage() {
           );
           if (!isActive) return;
           for (const [eventId, detail] of chunkResults) {
-            detailsMap.set(eventId, detail);
+            detailsMap.set(eventId, detail || {});
           }
         }
 
-        const events = eventIds.map((eventId) => ({
+        const enrichedRows = rows.map((row) => {
+          const eventId = row?.eventId || row?.id;
+          const detail = (eventId ? detailsMap.get(eventId) : null) || {};
+          return enrichLogRowWithDetail(row, detail);
+        });
+
+        const filteredRows = selectStoreFocusedMatches(enrichedRows);
+
+        const rowsByEventId = new Map();
+        for (const row of filteredRows) {
+          const eventId = row?.eventId || row?.id;
+          if (!eventId) continue;
+          if (!rowsByEventId.has(eventId)) rowsByEventId.set(eventId, []);
+          rowsByEventId.get(eventId).push(row);
+        }
+
+        const events = Array.from(rowsByEventId.keys()).map((eventId) => ({
           id: eventId,
           rows: rowsByEventId.get(eventId) || [],
           detail: detailsMap.get(eventId) || {},
