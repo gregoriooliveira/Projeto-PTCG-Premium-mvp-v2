@@ -11,6 +11,14 @@ const eventDocs = [
     result: 'W'
   },
   {
+    eventId: 'evt-with-stats-counts',
+    createdAt: 15,
+    date: '2024-03-25',
+    stats: { counts: { W: 1, L: 0, T: 1 } },
+    deckName: 'Deck Stats',
+    opponentDeck: 'Deck Opp'
+  },
+  {
     eventId: 'evt-with-results',
     createdAt: 10,
     date: '2024-03-20',
@@ -133,8 +141,8 @@ describe('home routes GET /home', () => {
 
     await handler(req, res);
 
-    expect(res.body.summary.counts).toEqual({ W: 4, L: 2, T: 1, total: 7 });
-    expect(res.body.summary.wr).toBe(57.1);
+    expect(res.body.summary.counts).toEqual({ W: 5, L: 2, T: 2, total: 9 });
+    expect(res.body.summary.wr).toBe(55.6);
     expect(res.body.summary.topDeck).toEqual({
       deckKey: 'deck-1',
       wr: 66.7,
