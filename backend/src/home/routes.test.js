@@ -20,14 +20,7 @@ const eventDocs = [
   }
 ];
 
-const decksDocs = [
-  {
-    deckKey: 'deck-1',
-    counts: { W: 10, L: 5, T: 0 },
-    wr: 66.7,
-    pokemons: ['pikachu']
-  }
-];
+let decksDocs;
 
 function createSnapshot(items) {
   return {
@@ -40,6 +33,14 @@ function createSnapshot(items) {
 let collectionHandlers;
 
 beforeEach(() => {
+  decksDocs = [
+    {
+      deckKey: 'deck-1',
+      counts: { W: 10, L: 5, T: 0 },
+      wr: 66.7,
+      pokemons: ['pikachu']
+    }
+  ];
   collectionHandlers = {
     physicalEvents: {
       async get() {
@@ -139,6 +140,45 @@ describe('home routes GET /home', () => {
       wr: 66.7,
       avatars: ['pikachu'],
       pokemons: ['pikachu']
+    });
+  });
+
+  it('derives deck win rate and counts when missing from aggregate data', async () => {
+    decksDocs.push({
+      deckKey: 'deck-derived',
+      counts: { W: 3, L: 0, T: 0 },
+      pokemons: ['eevee']
+    });
+    decksDocs.push({
+      deckKey: 'deck-empty',
+      pokemons: ['snorlax']
+    });
+
+    const handler = getHomeHandler();
+    const req = { query: { source: 'physical', limit: '5' } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    const derivedDeck = res.body.topDecks.find((d) => d.deckKey === 'deck-derived');
+    expect(derivedDeck).toMatchObject({
+      counts: { W: 3, L: 0, T: 0 },
+      wr: 100,
+      avatars: ['eevee'],
+      pokemons: ['eevee']
+    });
+
+    expect(res.body.summary.topDeck).toEqual({
+      deckKey: 'deck-derived',
+      wr: 100,
+      avatars: ['eevee'],
+      pokemons: ['eevee']
+    });
+
+    const emptyDeck = res.body.topDecks.find((d) => d.deckKey === 'deck-empty');
+    expect(emptyDeck).toMatchObject({
+      counts: { W: 0, L: 0, T: 0 },
+      wr: 0
     });
   });
 });
