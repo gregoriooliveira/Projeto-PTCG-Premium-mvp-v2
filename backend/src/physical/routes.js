@@ -1013,10 +1013,12 @@ function computeEventTimestamp(ev = {}) {
     }
     return null;
   };
-  const created = parseCandidate(ev?.createdAt);
-  if (created !== null) return created;
   const date = parseCandidate(ev?.date);
   if (date !== null) return date;
+  const dateISO = parseCandidate(ev?.dateISO);
+  if (dateISO !== null) return dateISO;
+  const created = parseCandidate(ev?.createdAt);
+  if (created !== null) return created;
   return 0;
 }
 
@@ -1374,8 +1376,8 @@ async function buildEventRows(ev, docId, { normalizedTarget = null, rawTarget = 
   const baseRow = {
     id: eventId || docId || null,
     eventId: eventId || docId || null,
-    createdAt: ev?.createdAt || null,
-    date: ev?.date || ev?.createdAt || null,
+    createdAt: ev?.createdAt ?? null,
+    date: ev?.date || ev?.dateISO || ev?.createdAt || null,
     ts,
     deck: playerDeckName || null,
     playerDeck: playerDeckName || null,
@@ -1504,11 +1506,28 @@ r.get("/logs", async (req, res) => {
         rawTarget: rawOpponent,
       });
       for (const row of eventRows) {
-        row.ts = typeof row.ts === "number" && Number.isFinite(row.ts)
-          ? row.ts
-          : entry.ts ?? computeEventTimestamp(entry.data);
-        if (!row.createdAt && entry.data.createdAt != null) row.createdAt = entry.data.createdAt;
-        if (!row.date) row.date = entry.data.date || entry.data.createdAt || row.createdAt || null;
+        if (row.createdAt == null && entry.data.createdAt != null) {
+          row.createdAt = entry.data.createdAt;
+        }
+        if (!row.date) {
+          row.date = entry.data.date || entry.data.dateISO || row.createdAt || null;
+        }
+        if (!row.dateISO && typeof row.date === "string" && row.date) {
+          row.dateISO = row.date;
+        } else if (!row.dateISO && entry.data.dateISO) {
+          row.dateISO = entry.data.dateISO;
+        }
+        const tsSource = {
+          date: row.date ?? entry.data.date ?? entry.data.dateISO ?? null,
+          dateISO: row.dateISO ?? entry.data.dateISO ?? entry.data.date ?? null,
+          createdAt: row.createdAt ?? entry.data.createdAt ?? null,
+        };
+        const computedTs = computeEventTimestamp(tsSource);
+        if (computedTs) {
+          row.ts = computedTs;
+        } else if (!(typeof row.ts === "number" && Number.isFinite(row.ts))) {
+          row.ts = entry.ts ?? computeEventTimestamp(entry.data);
+        }
         row.source = "physical";
         rows.push(row);
       }

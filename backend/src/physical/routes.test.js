@@ -763,4 +763,32 @@ describe("physical routes GET /logs", () => {
     expect(row.source).toBe("physical");
     expect(row.pokemons).toEqual(expect.arrayContaining(["blastoise", "weezing"]));
   });
+
+  it("aligns row timestamps and dates with the stored event date", async () => {
+    const eventDate = "2024-06-01";
+    const createdAt = Date.UTC(2024, 5, 2, 12, 30);
+    eventsStore = {
+      evt4: {
+        eventId: "evt4",
+        createdAt,
+        date: eventDate,
+        deckName: "Mew Control",
+        opponent: "Misty",
+        opponentsList: ["misty"],
+        result: "W",
+      },
+    };
+
+    const handler = getLogsHandler();
+    const res = createRes();
+
+    await handler({ query: { limit: "5" } }, res);
+
+    expect(res.body.ok).toBe(true);
+    expect(res.body.rows).toHaveLength(1);
+    const [row] = res.body.rows;
+    expect(row.date).toBe(eventDate);
+    expect(row.ts).toBe(Date.parse(eventDate));
+    expect(row.createdAt).toBe(createdAt);
+  });
 });
