@@ -944,32 +944,41 @@ export default function PhysicalStoreEventsPage() {
                         <div className="px-4 py-4 text-sm text-zinc-300">Nenhuma partida registrada para este evento.</div>
                       )}
 
-                      {matches.map((match) => (
-                        <div
-                          key={match.id}
-                          className="grid grid-cols-[90px_1.2fr_1.2fr_1.2fr_70px] items-center px-4 py-3 text-sm border-t border-zinc-800/50"
-                        >
-                          <div className="text-zinc-400">{match.roundLabel}</div>
-                          <div className="text-zinc-200 truncate" title={match.opponent || "—"}>
-                            {match.opponent || "—"}
-                          </div>
-                          <div className="min-w-0">
-                            <DeckLabel
-                              deckName={match.opponentDeck.label || "—"}
-                              pokemonHints={match.opponentPokemons}
-                            />
-                          </div>
-                          <div className="min-w-0">
-                            <DeckLabel
-                              deckName={match.playerDeck.label || "—"}
-                              pokemonHints={match.userPokemons}
-                            />
-                          </div>
-                          <div className={`text-right font-semibold ${renderResultTone(match.result)}`}>
-                            {match.result || "—"}
-                          </div>
-                        </div>
-                      ))}
+                      {matches.map((match) => {
+                        const handleMatchClick = (event) => {
+                          event.stopPropagation();
+                          window.location.hash = `#/tcg-fisico/eventos/${ev.id}`;
+                        };
+
+                        return (
+                          <button
+                            type="button"
+                            key={match.id}
+                            onClick={handleMatchClick}
+                            className="grid w-full grid-cols-[90px_1.2fr_1.2fr_1.2fr_70px] items-center px-4 py-3 text-left text-sm border-t border-zinc-800/50 bg-transparent transition-colors cursor-pointer hover:bg-zinc-800/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-400/60"
+                          >
+                            <div className="text-zinc-400">{match.roundLabel}</div>
+                            <div className="text-zinc-200 truncate" title={match.opponent || "—"}>
+                              {match.opponent || "—"}
+                            </div>
+                            <div className="min-w-0">
+                              <DeckLabel
+                                deckName={match.opponentDeck.label || "—"}
+                                pokemonHints={match.opponentPokemons}
+                              />
+                            </div>
+                            <div className="min-w-0">
+                              <DeckLabel
+                                deckName={match.playerDeck.label || "—"}
+                                pokemonHints={match.userPokemons}
+                              />
+                            </div>
+                            <div className={`text-right font-semibold ${renderResultTone(match.result)}`}>
+                              {match.result || "—"}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
