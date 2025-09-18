@@ -909,12 +909,6 @@ export default function PhysicalStoreEventsPage() {
                       {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                       <span>Partidas</span>
                     </button>
-                    <a
-                      href={`#/tcg-fisico/eventos/${ev.id}`}
-                      className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 hover:bg-zinc-700"
-                    >
-                      Detalhes
-                    </a>
                   </div>
                 </div>
 
