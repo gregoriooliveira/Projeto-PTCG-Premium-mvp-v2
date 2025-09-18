@@ -695,33 +695,6 @@ export default function PhysicalStoreEventsPage() {
     load();
   }, [load]);
 
-  useEffect(() => {
-    const unsubscribe = subscribePhysicalRoundsChanged((eventId) => {
-      if (!isMountedRef.current) return;
-
-      setRoundsCache((prev) => {
-        if (!eventId) {
-          if (prev.size === 0) return prev;
-          return new Map();
-        }
-        if (!prev.has(eventId)) return prev;
-        const next = new Map(prev);
-        next.delete(eventId);
-        return next;
-      });
-
-      load();
-
-      if (eventId && expandedRowsRef.current?.[eventId]) {
-        Promise.resolve().then(() => ensureRoundsLoaded(eventId));
-      }
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [load, ensureRoundsLoaded]);
-
   const ensureRoundsLoaded = useCallback(
     (eventId) => {
       if (!eventId) return;
@@ -772,6 +745,33 @@ export default function PhysicalStoreEventsPage() {
     },
     [],
   );
+
+  useEffect(() => {
+    const unsubscribe = subscribePhysicalRoundsChanged((eventId) => {
+      if (!isMountedRef.current) return;
+
+      setRoundsCache((prev) => {
+        if (!eventId) {
+          if (prev.size === 0) return prev;
+          return new Map();
+        }
+        if (!prev.has(eventId)) return prev;
+        const next = new Map(prev);
+        next.delete(eventId);
+        return next;
+      });
+
+      load();
+
+      if (eventId && expandedRowsRef.current?.[eventId]) {
+        Promise.resolve().then(() => ensureRoundsLoaded(eventId));
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [load, ensureRoundsLoaded]);
 
   const groupedEvents = useMemo(
     () => buildGroupedStoreEvents(baseEvents, roundsCache),
