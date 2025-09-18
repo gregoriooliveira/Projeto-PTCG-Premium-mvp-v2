@@ -1,13 +1,15 @@
 // src/pages/PhysicalStoreEventsPage.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { ChevronLeft } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import ptBR from "date-fns/locale/pt-BR";
 
 import { getEvent } from "../eventsRepo.js";
 import { getPhysicalLogs } from "../services/api.js";
 import { getPhysicalRounds } from "../services/physicalApi.js";
-import { selectStoreFocusedMatches } from "../PhysicalPageV2.jsx";
+import DeckLabel from "../components/DeckLabel.jsx";
+import { prettyDeckKey } from "../services/prettyDeckKey.js";
+import { selectStoreFocusedMatches, STORE_FOCUSED_EVENT_TYPES } from "../PhysicalPageV2.jsx";
 
 // Função utilitária para normalizar strings
 const slugify = (s = "") => s
@@ -31,8 +33,6 @@ const deriveStoreMetadata = (value) => {
 const DEFAULT_LOG_PAGE_SIZE = 1000;
 const MAX_LOG_PAGE_SIZE = 10000;
 const MAX_LOG_REQUESTS = 200;
-
-const ALLOWED_EVENT_TYPE_KEYS = new Set(["local", "challenge", "cup"]);
 
 const clampPageSize = (value, fallback = DEFAULT_LOG_PAGE_SIZE) => {
   const numeric = Number(value);
@@ -78,6 +78,60 @@ const normalizeStoreEventTypeKey = (value) => {
   if (token === "clp" || token.includes("challenge")) return "challenge";
   if (token.includes("cup") || token.includes("copa")) return "cup";
   return token;
+};
+
+const ensurePokemonHints = (list) => {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const entry of list) {
+    if (!entry) continue;
+    let candidate = null;
+    if (typeof entry === "string") candidate = entry;
+    else if (typeof entry === "object") candidate = entry.slug || entry.name || entry.id || null;
+    if (!candidate) continue;
+    const value = String(candidate).trim();
+    if (!value) continue;
+    if (!out.includes(value)) out.push(value);
+    if (out.length >= 4) break;
+  }
+  return out;
+};
+
+const toDeckKeySlug = (value) => {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  return raw
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+};
+
+const deriveDeckLabel = ({ keyCandidates = [], nameCandidates = [] } = {}) => {
+  const normalizedKeys = keyCandidates
+    .map((candidate) => toDeckKeySlug(candidate))
+    .filter(Boolean);
+  for (const key of normalizedKeys) {
+    const pretty = prettyDeckKey(key);
+    if (pretty) return { label: pretty, key };
+  }
+
+  const normalizedFromNames = nameCandidates
+    .map((candidate) => toDeckKeySlug(candidate))
+    .filter(Boolean);
+  for (const key of normalizedFromNames) {
+    const pretty = prettyDeckKey(key);
+    if (pretty) return { label: pretty, key };
+  }
+
+  const fallback = nameCandidates.find((name) => typeof name === "string" && name.trim());
+  return { label: fallback ? fallback.trim() : "", key: "" };
+};
+
+const sumCounts = (counts = {}) => {
+  const w = Number(counts?.w) || 0;
+  const l = Number(counts?.l) || 0;
+  const t = Number(counts?.t) || 0;
+  return w + l + t;
 };
 
 const computeRoundOutcome = (round = {}) => {
@@ -198,16 +252,22 @@ const fetchAllPhysicalLogs = async (options = {}) => {
   return { rows: aggregatedRows, total: ensuredTotal };
 };
 
-const buildGroupedStoreEvents = (rowsByEventId, detailsMap, roundsMap) => {
+const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
   const storeMap = new Map();
 
-  for (const [eventId, rows] of rowsByEventId.entries()) {
+  for (const entry of events) {
+    if (!entry) continue;
+    const eventId = entry?.id || entry?.eventId;
     if (!eventId) continue;
 
-    const detail = detailsMap.get(eventId) || {};
+    const rows = Array.isArray(entry?.rows) ? entry.rows : [];
+    const detail = entry?.detail || {};
     const sampleRow = rows[0] || {};
 
-    const roundsCandidate = roundsMap.has(eventId) ? roundsMap.get(eventId) : detail.rounds;
+    const roundsEntry = roundsCache instanceof Map ? roundsCache.get(eventId) : null;
+    const cachedRounds = roundsEntry && Array.isArray(roundsEntry.rounds) ? roundsEntry.rounds : null;
+    const roundsCandidate = cachedRounds || detail.rounds;
+
     const rounds = Array.isArray(roundsCandidate) ? roundsCandidate : [];
 
     const storeNameRaw =
@@ -251,6 +311,15 @@ const buildGroupedStoreEvents = (rowsByEventId, detailsMap, roundsMap) => {
       sampleRow.notes ||
       eventId;
 
+    const eventTypeKey =
+      normalizeStoreEventTypeKey(eventTypeRaw) ||
+      normalizeStoreEventTypeKey(sampleRow.eventType) ||
+      normalizeStoreEventTypeKey(sampleRow.type);
+
+    if (eventTypeKey && !STORE_FOCUSED_EVENT_TYPES.has(eventTypeKey)) {
+      continue;
+    }
+
     const eventEntry = {
       id: eventId,
       title,
@@ -260,6 +329,9 @@ const buildGroupedStoreEvents = (rowsByEventId, detailsMap, roundsMap) => {
       rounds,
       results: counts,
       detail,
+      matches: rows,
+      storeName,
+      storeIdentifier: storeIdentifier || storeKey,
     };
 
     let storeEntry = storeMap.get(storeKey);
@@ -301,21 +373,178 @@ const buildGroupedStoreEvents = (rowsByEventId, detailsMap, roundsMap) => {
     .sort((a, b) => a.storeName.localeCompare(b.storeName, "pt-BR"));
 };
 
-function PartidasChips({ w = 0, l = 0, t = 0 }) {
+function PartidasChips({ counts = {} }) {
+  const w = Number(counts?.w) || 0;
+  const l = Number(counts?.l) || 0;
+  const t = Number(counts?.t) || 0;
+  const total = sumCounts(counts);
+
   return (
-    <div className="flex items-center gap-2">
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-emerald-600/20 text-emerald-400 border border-emerald-700/40">W {w}</span>
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-rose-600/20 text-rose-400 border border-rose-700/40">L {l}</span>
-      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-amber-600/20 text-amber-400 border border-amber-700/40">E {t}</span>
+    <div className="flex items-center gap-2 text-xs flex-wrap">
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-600/20 text-emerald-400 border border-emerald-700/40">W {w}</span>
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-rose-600/20 text-rose-400 border border-rose-700/40">L {l}</span>
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-amber-600/20 text-amber-400 border border-amber-700/40">E {t}</span>
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-zinc-700/30 text-zinc-300 border border-zinc-600/40">Total {total}</span>
     </div>
   );
 }
 
+const parseRoundNumber = (entry) => {
+  const candidates = [entry?.number, entry?.roundNumber, entry?.round, entry?.idx, entry?.index];
+  for (const candidate of candidates) {
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric) && numeric > 0) return numeric;
+  }
+  return null;
+};
+
+const computeOrderValue = (entry, fallbackIndex = 0) => {
+  const roundNumber = parseRoundNumber(entry);
+  if (roundNumber != null) return roundNumber;
+
+  const timestampCandidates = [entry?.date, entry?.createdAt, entry?.updatedAt, entry?.ts, entry?.startAt];
+  for (const value of timestampCandidates) {
+    const parsed = parseDateValue(value);
+    if (parsed != null) return parsed;
+  }
+
+  return fallbackIndex;
+};
+
+const buildMatchEntryFromRound = (round, index) => {
+  const numericRound = parseRoundNumber(round);
+  const roundLabel = numericRound != null ? `R${numericRound}` : `R${index + 1}`;
+  const result = computeRoundOutcome(round);
+  const opponentName =
+    round?.opponentName ||
+    round?.opponent ||
+    round?.oppName ||
+    round?.enemy ||
+    "";
+
+  const playerDeck = deriveDeckLabel({
+    keyCandidates: [round?.playerDeckKey, round?.deckKey, round?.playerDeckSlug],
+    nameCandidates: [round?.playerDeckName, round?.playerDeck, round?.deckName, round?.deck],
+  });
+
+  const opponentDeck = deriveDeckLabel({
+    keyCandidates: [round?.opponentDeckKey, round?.oppDeckKey, round?.opponentDeckSlug],
+    nameCandidates: [round?.opponentDeckName, round?.opponentDeck, round?.oppDeck, round?.deckOpponent],
+  });
+
+  const userPokemons = ensurePokemonHints(
+    round?.userPokemons || round?.playerPokemons || round?.myPokemons || round?.pokemons,
+  );
+  const opponentPokemons = ensurePokemonHints(
+    round?.opponentPokemons || round?.oppPokemons || round?.enemyPokemons,
+  );
+
+  return {
+    id: round?.id || `round-${index}`,
+    order: computeOrderValue(round, index),
+    roundLabel,
+    opponent: opponentName,
+    playerDeck,
+    opponentDeck,
+    userPokemons,
+    opponentPokemons,
+    result: result || "",
+  };
+};
+
+const buildMatchEntryFromLog = (match, index) => {
+  const opponentName =
+    match?.opponent ||
+    match?.opponentName ||
+    match?.enemy ||
+    match?.opponentUser ||
+    match?.opponent_username ||
+    "";
+
+  const playerDeck = deriveDeckLabel({
+    keyCandidates: [match?.playerDeckKey, match?.deckKey, match?.deckSlug],
+    nameCandidates: [
+      match?.playerDeck,
+      match?.deckName,
+      match?.deck,
+      match?.userDeck,
+      match?.userDeckName,
+    ],
+  });
+
+  const opponentDeck = deriveDeckLabel({
+    keyCandidates: [match?.opponentDeckKey, match?.oppDeckKey, match?.opponentDeckSlug],
+    nameCandidates: [
+      match?.opponentDeck,
+      match?.opponentDeckName,
+      match?.oppDeck,
+      match?.deckOpponent,
+      match?.opponentDeckTitle,
+    ],
+  });
+
+  const userPokemons = ensurePokemonHints(
+    match?.userPokemons || match?.myPokemons || match?.pokemons || match?.playerPokemons,
+  );
+  const opponentPokemons = ensurePokemonHints(
+    match?.opponentPokemons || match?.oppPokemons || match?.enemyPokemons,
+  );
+
+  const result =
+    normalizeResultToken(match?.result) ||
+    normalizeResultToken(match?.outcome) ||
+    normalizeResultToken(match?.finalResult) ||
+    "";
+
+  const roundLabel = (() => {
+    const numeric = parseRoundNumber(match);
+    if (numeric != null) return `R${numeric}`;
+    const name = match?.roundName || match?.stage;
+    return name ? String(name) : `Jogo ${index + 1}`;
+  })();
+
+  return {
+    id: match?.rowId || match?.logId || match?.id || `match-${index}`,
+    order: computeOrderValue(match, index),
+    roundLabel,
+    opponent: opponentName,
+    playerDeck,
+    opponentDeck,
+    userPokemons,
+    opponentPokemons,
+    result,
+  };
+};
+
+const buildEventMatches = (event = {}, roundsEntry) => {
+  const rounds = Array.isArray(roundsEntry?.rounds) ? roundsEntry.rounds : [];
+  const hasRounds = rounds.length > 0;
+  const matchesSource = hasRounds ? rounds : event?.matches;
+  const normalized = Array.isArray(matchesSource) ? matchesSource : [];
+
+  const mapped = hasRounds
+    ? normalized.map((round, index) => buildMatchEntryFromRound(round, index))
+    : normalized.map((match, index) => buildMatchEntryFromLog(match, index));
+
+  return mapped
+    .filter((entry) => entry && (entry.opponent || entry.playerDeck.label || entry.opponentDeck.label))
+    .sort((a, b) => a.order - b.order);
+};
+
 export default function PhysicalStoreEventsPage() {
   const [selectedStore, setSelectedStore] = useState("");
-  const [groupedEvents, setGroupedEvents] = useState([]);
+  const [baseEvents, setBaseEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [roundsCache, setRoundsCache] = useState(() => new Map());
+  const [expandedRows, setExpandedRows] = useState({});
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const parse = () => {
@@ -355,7 +584,6 @@ export default function PhysicalStoreEventsPage() {
 
         const eventIds = Array.from(rowsByEventId.keys());
         const detailsMap = new Map();
-        const roundsMap = new Map();
         const CHUNK_SIZE = 8;
 
         for (let i = 0; i < eventIds.length; i += CHUNK_SIZE) {
@@ -377,33 +605,18 @@ export default function PhysicalStoreEventsPage() {
           }
         }
 
-        for (let i = 0; i < eventIds.length; i += CHUNK_SIZE) {
-          const chunk = eventIds.slice(i, i + CHUNK_SIZE);
-          const chunkRounds = await Promise.all(
-            chunk.map(async (eventId) => {
-              try {
-                const rounds = await getPhysicalRounds(eventId);
-                return [eventId, Array.isArray(rounds) ? rounds : []];
-              } catch (err) {
-                console.warn(`[PhysicalStoreEventsPage] falha ao carregar rounds do evento ${eventId}`, err);
-                return [eventId, []];
-              }
-            }),
-          );
-          if (!isActive) return;
-          for (const [eventId, rounds] of chunkRounds) {
-            roundsMap.set(eventId, rounds);
-          }
-        }
-
-        const grouped = buildGroupedStoreEvents(rowsByEventId, detailsMap, roundsMap);
+        const events = eventIds.map((eventId) => ({
+          id: eventId,
+          rows: rowsByEventId.get(eventId) || [],
+          detail: detailsMap.get(eventId) || {},
+        }));
         if (!isActive) return;
-        setGroupedEvents(grouped);
+        setBaseEvents(events);
       } catch (err) {
         if (!isActive) return;
         console.error("[PhysicalStoreEventsPage] falha ao carregar logs físicos", err);
         setError(err instanceof Error ? err : new Error(String(err)));
-        setGroupedEvents([]);
+        setBaseEvents([]);
       } finally {
         if (isActive) {
           setIsLoading(false);
@@ -417,6 +630,62 @@ export default function PhysicalStoreEventsPage() {
       isActive = false;
     };
   }, []);
+
+  const ensureRoundsLoaded = useCallback(
+    (eventId) => {
+      if (!eventId) return;
+
+      let shouldFetch = false;
+      setRoundsCache((prev) => {
+        const existing = prev.get(eventId);
+        if (existing && (existing.status === "loading" || existing.status === "loaded")) {
+          shouldFetch = false;
+          return prev;
+        }
+        shouldFetch = true;
+        const next = new Map(prev);
+        next.set(eventId, {
+          status: "loading",
+          rounds: Array.isArray(existing?.rounds) ? existing.rounds : [],
+        });
+        return next;
+      });
+
+      if (!shouldFetch) return;
+
+      (async () => {
+        try {
+          const rounds = await getPhysicalRounds(eventId);
+          if (!isMountedRef.current) return;
+          setRoundsCache((prev) => {
+            const next = new Map(prev);
+            next.set(eventId, {
+              status: "loaded",
+              rounds: Array.isArray(rounds) ? rounds : [],
+            });
+            return next;
+          });
+        } catch (err) {
+          console.warn(
+            `[PhysicalStoreEventsPage] falha ao carregar rounds do evento ${eventId}`,
+            err,
+          );
+          if (!isMountedRef.current) return;
+          setRoundsCache((prev) => {
+            const next = new Map(prev);
+            next.set(eventId, { status: "error", error: err, rounds: [] });
+            return next;
+          });
+        }
+      })();
+    },
+    [],
+  );
+
+  const groupedEvents = useMemo(
+    () => buildGroupedStoreEvents(baseEvents, roundsCache),
+    [baseEvents, roundsCache],
+  );
 
   const stores = useMemo(
     () =>
@@ -438,10 +707,12 @@ export default function PhysicalStoreEventsPage() {
             eventType: event.eventType,
             eventTypeKey: event.eventTypeKey,
             date: event.date,
-            storeName: store.storeName,
-            storeIdentifier: store.identifier,
+            storeName: event.storeName || store.storeName,
+            storeIdentifier: event.storeIdentifier || store.identifier,
             rounds: event.rounds,
             results: event.results,
+            matches: event.matches,
+            detail: event.detail,
           });
         }
       }
@@ -451,12 +722,28 @@ export default function PhysicalStoreEventsPage() {
   }, [groupedEvents]);
 
   const filtered = useMemo(() => {
-    const byType = allEvents.filter((ev) =>
-      ALLOWED_EVENT_TYPE_KEYS.has(ev.eventTypeKey || normalizeStoreEventTypeKey(ev.eventType)),
-    );
+    const byType = allEvents.filter((ev) => {
+      const normalized = ev.eventTypeKey || normalizeStoreEventTypeKey(ev.eventType);
+      return !normalized || STORE_FOCUSED_EVENT_TYPES.has(normalized);
+    });
     if (!selectedStore) return byType;
     return byType.filter((ev) => ev.storeIdentifier === selectedStore);
   }, [allEvents, selectedStore]);
+
+  const toggleRow = useCallback(
+    (eventId) => {
+      if (!eventId) return;
+      setExpandedRows((prev) => {
+        const isExpanded = Boolean(prev[eventId]);
+        const next = { ...prev, [eventId]: !isExpanded };
+        if (!isExpanded) {
+          Promise.resolve().then(() => ensureRoundsLoaded(eventId));
+        }
+        return next;
+      });
+    },
+    [ensureRoundsLoaded],
+  );
 
   return (
     <div className="min-h-screen w-full text-zinc-100 bg-zinc-950">
@@ -529,30 +816,125 @@ export default function PhysicalStoreEventsPage() {
 
         {/* TABELA */}
         <div className="rounded-2xl overflow-hidden border border-zinc-800 bg-zinc-900/50">
-          <div className="grid grid-cols-[1fr_1fr_1fr_120px] px-5 py-3 text-xs uppercase tracking-wide text-zinc-400 bg-zinc-900 border-b border-zinc-800">
+          <div className="grid grid-cols-[120px_1.4fr_1fr_1fr_160px] px-5 py-3 text-xs uppercase tracking-wide text-zinc-400 bg-zinc-900 border-b border-zinc-800">
             <div>Dia</div>
             <div>Evento</div>
+            <div>Loja</div>
             <div>Partidas</div>
             <div className="text-right">Ação</div>
           </div>
 
-          {filtered.map((ev) => (
-            <div key={ev.id} className="grid grid-cols-[1fr_1fr_1fr_120px] items-center px-5 py-4 border-b border-zinc-800/60 hover:bg-zinc-900/70 transition-colors">
-              <div className="text-zinc-200">
-                {ev.date ? format(new Date(ev.date), "dd/MM/yyyy", { locale: ptBR }) : "—"}
+          {filtered.map((ev) => {
+            const isExpanded = Boolean(expandedRows[ev.id]);
+            const roundsEntry = roundsCache.get(ev.id) || {};
+            const matches = buildEventMatches(ev, roundsEntry);
+            const roundStatus = roundsEntry?.status;
+            const storeLabel = ev.storeName || ev.detail?.storeName || ev.detail?.storeOrCity || "—";
+
+            const renderResultTone = (result) => {
+              if (result === "W") return "text-emerald-400";
+              if (result === "L") return "text-rose-400";
+              if (result === "T") return "text-amber-300";
+              return "text-zinc-300";
+            };
+
+            return (
+              <div key={ev.id} className="border-b border-zinc-800/60">
+                <div className="grid grid-cols-[120px_1.4fr_1fr_1fr_160px] items-center px-5 py-4 gap-4 hover:bg-zinc-900/70 transition-colors">
+                  <div className="text-zinc-200">
+                    {ev.date ? format(new Date(ev.date), "dd/MM/yyyy", { locale: ptBR }) : "—"}
+                  </div>
+                  <div className="text-zinc-300 truncate" title={ev.title || ev.eventType}>
+                    {ev.title || ev.eventType || "—"}
+                  </div>
+                  <div className="text-zinc-300 truncate" title={storeLabel}>
+                    {storeLabel}
+                  </div>
+                  <div>
+                    <PartidasChips counts={ev?.results} />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleRow(ev.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800 text-sm text-zinc-200 hover:bg-zinc-700 transition"
+                    >
+                      {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      <span>Partidas</span>
+                    </button>
+                    <a
+                      href={`#/tcg-fisico/eventos/${ev.id}`}
+                      className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 hover:bg-zinc-700"
+                    >
+                      Detalhes
+                    </a>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="px-5 pb-5">
+                    <div className="mt-3 rounded-2xl border border-zinc-800/70 bg-zinc-900/70 overflow-hidden">
+                      <div className="grid grid-cols-[90px_1.2fr_1.2fr_1.2fr_70px] px-4 py-3 text-[11px] uppercase tracking-wide text-zinc-400 bg-zinc-900/80">
+                        <div>Round</div>
+                        <div>Oponente</div>
+                        <div>Deck do Oponente</div>
+                        <div>Seu Deck</div>
+                        <div className="text-right">W/L/T</div>
+                      </div>
+
+                      {roundStatus === "loading" && (
+                        <div className="px-4 py-4 text-sm text-zinc-300">Carregando partidas...</div>
+                      )}
+
+                      {roundStatus === "error" && (
+                        <div className="px-4 py-4 text-sm text-rose-300 flex items-center justify-between gap-4">
+                          <span>Falha ao carregar rounds deste evento.</span>
+                          <button
+                            type="button"
+                            className="px-3 py-1 rounded-lg border border-rose-500/60 text-rose-200 hover:bg-rose-500/20"
+                            onClick={() => ensureRoundsLoaded(ev.id)}
+                          >
+                            Tentar novamente
+                          </button>
+                        </div>
+                      )}
+
+                      {roundStatus !== "loading" && matches.length === 0 && (
+                        <div className="px-4 py-4 text-sm text-zinc-300">Nenhuma partida registrada para este evento.</div>
+                      )}
+
+                      {matches.map((match) => (
+                        <div
+                          key={match.id}
+                          className="grid grid-cols-[90px_1.2fr_1.2fr_1.2fr_70px] items-center px-4 py-3 text-sm border-t border-zinc-800/50"
+                        >
+                          <div className="text-zinc-400">{match.roundLabel}</div>
+                          <div className="text-zinc-200 truncate" title={match.opponent || "—"}>
+                            {match.opponent || "—"}
+                          </div>
+                          <div className="min-w-0">
+                            <DeckLabel
+                              deckName={match.opponentDeck.label || "—"}
+                              pokemonHints={match.opponentPokemons}
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <DeckLabel
+                              deckName={match.playerDeck.label || "—"}
+                              pokemonHints={match.userPokemons}
+                            />
+                          </div>
+                          <div className={`text-right font-semibold ${renderResultTone(match.result)}`}>
+                            {match.result || "—"}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="text-zinc-300">{ev.title || ev.eventType}</div>
-              <div><PartidasChips w={ev?.results?.w} l={ev?.results?.l} t={ev?.results?.t} /></div>
-              <div className="text-right">
-                <a
-                  href={`#/tcg-fisico/eventos/${ev.id}`}
-                  className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 hover:bg-zinc-700"
-                >
-                  Detalhes
-                </a>
-              </div>
-            </div>
-          ))}
+            );
+          })}
 
           {filtered.length === 0 && !isLoading && (
             <div className="p-6 text-zinc-400 text-sm">Nenhum evento encontrado.</div>
