@@ -9,6 +9,7 @@ import { BarChart3, CalendarDays, Trophy, Users, Upload } from "lucide-react";
 import DeckLabel from "./components/DeckLabel.jsx";
 import { getEvent } from "./eventsRepo.js";
 import { getPhysicalLogs, getPhysicalSummary, normalizeDeckKey } from "./services/api.js";
+import { subscribePhysicalRoundsChanged } from "./utils/physicalRoundsBus.js";
 
 /** Helpers locais para contagem e top deck */
 function wlCounts(matches = []) {
@@ -763,6 +764,16 @@ export default function PhysicalPageV2({ manualMatches }) {
     fetchData();
     return () => {
       isMountedRef.current = false;
+    };
+  }, [fetchData]);
+
+  useEffect(() => {
+    const unsubscribe = subscribePhysicalRoundsChanged(() => {
+      if (!isMountedRef.current) return;
+      fetchData();
+    });
+    return () => {
+      unsubscribe();
     };
   }, [fetchData]);
 
