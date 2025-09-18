@@ -17,6 +17,17 @@ const slugify = (s = "") => s
   .replace(/^-+|-+$/g, "")
   .toLowerCase();
 
+const deriveStoreMetadata = (value) => {
+  const name = String(value || "").trim();
+  if (!name) {
+    return { name: "", identifier: "" };
+  }
+  const slug = slugify(name);
+  const fallback = name.toLowerCase().replace(/\s+/g, "-");
+  const identifier = slug || fallback || name.toLowerCase();
+  return { name, identifier };
+};
+
 const DEFAULT_LOG_PAGE_SIZE = 1000;
 const MAX_LOG_PAGE_SIZE = 10000;
 const MAX_LOG_REQUESTS = 200;
@@ -207,9 +218,10 @@ const buildGroupedStoreEvents = (rowsByEventId, detailsMap, roundsMap) => {
       sampleRow.store ||
       sampleRow.storeOrCity ||
       "";
-    const storeName = String(storeNameRaw || "").trim();
+    const { name: storeName, identifier: storeIdentifier } =
+      deriveStoreMetadata(storeNameRaw);
     if (!storeName) continue;
-    const slug = slugify(storeName);
+    const storeKey = storeIdentifier || storeName.toLowerCase();
 
     const timestamp = extractEventTimestamp(detail, sampleRow);
     const dayKey = dayKeyFromTimestamp(timestamp);
@@ -250,10 +262,14 @@ const buildGroupedStoreEvents = (rowsByEventId, detailsMap, roundsMap) => {
       detail,
     };
 
-    let storeEntry = storeMap.get(slug);
+    let storeEntry = storeMap.get(storeKey);
     if (!storeEntry) {
-      storeEntry = { storeName, slug, days: new Map() };
-      storeMap.set(slug, storeEntry);
+      storeEntry = {
+        storeName,
+        identifier: storeIdentifier || storeKey,
+        days: new Map(),
+      };
+      storeMap.set(storeKey, storeEntry);
     }
 
     let dayEntry = storeEntry.days.get(dayKey);
@@ -274,7 +290,7 @@ const buildGroupedStoreEvents = (rowsByEventId, detailsMap, roundsMap) => {
   return Array.from(storeMap.values())
     .map((store) => ({
       storeName: store.storeName,
-      slug: store.slug,
+      identifier: store.identifier,
       days: Array.from(store.days.values())
         .map((day) => ({
           ...day,
@@ -306,8 +322,10 @@ export default function PhysicalStoreEventsPage() {
       const hash = window.location.hash || "";
       const parts = hash.split("/");
       const idx = parts.findIndex((p) => p === "loja");
-      const slug = idx !== -1 && parts[idx + 1] ? decodeURIComponent(parts[idx + 1]) : "";
-      setSelectedStore(slug);
+      const raw =
+        idx !== -1 && parts[idx + 1] ? decodeURIComponent(parts[idx + 1]) : "";
+      const { identifier } = deriveStoreMetadata(raw);
+      setSelectedStore(identifier || "");
     };
     parse();
     window.addEventListener("hashchange", parse);
@@ -400,9 +418,14 @@ export default function PhysicalStoreEventsPage() {
     };
   }, []);
 
-  const stores = useMemo(() =>
-    groupedEvents.map((store) => ({ name: store.storeName, slug: store.slug })),
-  [groupedEvents]);
+  const stores = useMemo(
+    () =>
+      groupedEvents.map((store) => ({
+        name: store.storeName,
+        identifier: store.identifier,
+      })),
+    [groupedEvents],
+  );
 
   const allEvents = useMemo(() => {
     const rows = [];
@@ -416,7 +439,7 @@ export default function PhysicalStoreEventsPage() {
             eventTypeKey: event.eventTypeKey,
             date: event.date,
             storeName: store.storeName,
-            storeSlug: store.slug,
+            storeIdentifier: store.identifier,
             rounds: event.rounds,
             results: event.results,
           });
@@ -432,7 +455,7 @@ export default function PhysicalStoreEventsPage() {
       ALLOWED_EVENT_TYPE_KEYS.has(ev.eventTypeKey || normalizeStoreEventTypeKey(ev.eventType)),
     );
     if (!selectedStore) return byType;
-    return byType.filter((ev) => ev.storeSlug === selectedStore);
+    return byType.filter((ev) => ev.storeIdentifier === selectedStore);
   }, [allEvents, selectedStore]);
 
   return (
@@ -455,14 +478,19 @@ export default function PhysicalStoreEventsPage() {
               className="rounded-xl bg-zinc-900 border border-zinc-800 px-3 py-3"
               defaultValue=""
               onChange={(e) => {
-                const slug = e.target.value;
-                if (!slug) return;
-                window.location.hash = `#/tcg-fisico/eventos/loja/${slug}`;
+                const identifier = e.target.value;
+                if (!identifier) return;
+                window.location.hash = `#/tcg-fisico/eventos/loja/${encodeURIComponent(
+                  identifier,
+                )}`;
               }}
             >
               <option value="" disabled>Selecione</option>
               {stores.map((store) => (
-                <option key={store.slug} value={store.slug}>
+                <option
+                  key={store.identifier || store.name}
+                  value={store.identifier || store.name}
+                >
                   {store.name}
                 </option>
               ))}
