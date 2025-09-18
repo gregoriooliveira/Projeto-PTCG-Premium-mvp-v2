@@ -1,4 +1,13 @@
-const TZ = process.env.TZ || "America/Sao_Paulo";
+const processTz =
+  typeof process !== "undefined" ? process?.env?.TZ : undefined;
+const viteTz =
+  typeof import.meta !== "undefined" ? import.meta?.env?.VITE_TZ : undefined;
+const browserTz =
+  typeof Intl !== "undefined" && typeof Intl.DateTimeFormat === "function"
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+    : undefined;
+
+const TZ = processTz || viteTz || browserTz || "America/Sao_Paulo";
 
 const dateFormatCache = new Map();
 function getDateFormatter(timeZone = TZ) {
