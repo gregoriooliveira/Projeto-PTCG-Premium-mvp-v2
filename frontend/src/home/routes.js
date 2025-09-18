@@ -49,6 +49,20 @@ function eventCounts(ev = {}){
   );
 }
 
+function normalizeDeckRow(deck = {}) {
+  const counts = eventCounts(deck) || { W: 0, L: 0, T: 0 };
+  const storedWr = Number(deck.wr);
+  const wr = Number.isFinite(storedWr) ? storedWr : wrPercent(counts);
+  const avatars = Array.isArray(deck.pokemons) ? deck.pokemons : [];
+  return {
+    deckKey: deck.deckKey,
+    counts,
+    wr,
+    avatars,
+    pokemons: avatars,
+  };
+}
+
 async function sourceSummary(prefix, limitDays){
   // events
   const evSnap = await db.collection(`${prefix}Events`).get();
@@ -74,9 +88,10 @@ async function sourceSummary(prefix, limitDays){
   const lastDays = daysSnap.docs.map(d=>d.data());
   // decks
   const decksSnap = await db.collection(`${prefix}DecksAgg`).get();
-  const decks = decksSnap.docs.map(d=>d.data()).map(d => ({
-    deckKey: d.deckKey, counts: d.counts, wr: d.wr, avatars: (d.pokemons||[]), pokemons: (d.pokemons||[])
-  })).sort((a,b)=>b.wr-a.wr).slice(0,5);
+  const decks = decksSnap.docs
+    .map(d => normalizeDeckRow(d.data()))
+    .sort((a, b) => Number(b.wr || 0) - Number(a.wr || 0))
+    .slice(0,5);
   // opponents
   const oppSnap = await db.collection(`${prefix}OpponentsAgg`).get();
   const topOpponents = oppSnap.docs.map(doc => {
@@ -106,7 +121,19 @@ async function sourceSummary(prefix, limitDays){
   const recentTournaments = tourSnap.docs.map(d=>d.data());
 
   return {
-    summary: { counts: { ...counts, total: total(counts) }, wr: wrPercent(counts), topDeck: decks[0] ? { deckKey: decks[0].deckKey, wr: decks[0].wr, avatars: decks[0].avatars, pokemons: decks[0].pokemons } : null },
+    summary: {
+      counts: { ...counts, total: total(counts) },
+      wr: wrPercent(counts),
+      topDeck: decks[0]
+        ? {
+            deckKey: decks[0].deckKey,
+            wr: decks[0].wr,
+            avatars: decks[0].avatars,
+            pokemons: decks[0].pokemons,
+            counts: decks[0].counts,
+          }
+        : null,
+    },
     lastDays, topDecks: decks, topOpponents, recentTournaments, recentLogs
   };
 }
