@@ -1138,9 +1138,12 @@ export default function PhysicalStoreEventsPage() {
                         };
 
                         const counts = match.counts;
-                        const displayResult = counts
+                        const normalizedResult = normalizeResultToken(match.result);
+                        const displayResult = normalizedResult
+                          ? normalizedResult
+                          : counts
                           ? `${Number(counts.W || 0)}/${Number(counts.L || 0)}/${Number(counts.T || 0)}`
-                          : match.result || "—";
+                          : "—";
 
                         return (
                           <button
@@ -1165,7 +1168,12 @@ export default function PhysicalStoreEventsPage() {
                                 pokemonHints={match.userPokemons}
                               />
                             </div>
-                            <div className={`text-right font-semibold ${renderResultTone(match.result, counts)}`}>
+                            <div
+                              className={`text-right font-semibold ${renderResultTone(
+                                normalizedResult,
+                                counts,
+                              )}`}
+                            >
                               {displayResult}
                             </div>
                           </button>
