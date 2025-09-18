@@ -1,6 +1,52 @@
 import { db } from "../firestore.js";
 import { countsAdd, countsOfResult, wrPercent } from "../utils/wr.js";
 
+function normalizeCounts(source) {
+  if (!source || typeof source !== "object") return null;
+  const out = { W: 0, L: 0, T: 0 };
+  let hasValue = false;
+  for (const key of ["W", "L", "T"]) {
+    if (source[key] == null) continue;
+    const value = Number(source[key]);
+    if (!Number.isFinite(value)) continue;
+    out[key] = value;
+    hasValue = true;
+  }
+  return hasValue ? out : null;
+}
+
+function countsFromResultsList(list) {
+  if (!Array.isArray(list)) return null;
+  const acc = { W: 0, L: 0, T: 0 };
+  let hasValue = false;
+  for (const item of list) {
+    if (typeof item !== "string") continue;
+    const token = item.trim().toUpperCase();
+    if (!token) continue;
+    if (token === "W") {
+      acc.W += 1;
+      hasValue = true;
+    } else if (token === "L") {
+      acc.L += 1;
+      hasValue = true;
+    } else if (token === "T") {
+      acc.T += 1;
+      hasValue = true;
+    }
+  }
+  return hasValue ? acc : null;
+}
+
+function eventCounts(ev = {}) {
+  return (
+    normalizeCounts(ev.stats?.counts) ||
+    normalizeCounts(ev.counts) ||
+    normalizeCounts(ev.stats) ||
+    countsFromResultsList(ev.results) ||
+    countsOfResult(ev.result)
+  );
+}
+
 /** Garante ID seguro para usar em doc() */
 function safeDocId(s) {
   return encodeURIComponent(String(s ?? ""));
@@ -26,7 +72,10 @@ export async function recomputeDay(date) {
     return;
   }
   let counts = { W: 0, L: 0, T: 0 };
-  snap.forEach(d => { counts = countsAdd(counts, countsOfResult(d.data().result)); });
+  snap.forEach((d) => {
+    const evCounts = eventCounts(d.data()) || { W: 0, L: 0, T: 0 };
+    counts = countsAdd(counts, evCounts);
+  });
   const wr = wrPercent(counts);
   await db.collection("liveDays").doc(date).set({ date, counts, wr }, { merge: true });
 }
@@ -45,7 +94,8 @@ export async function recomputeDeck(deckKey) {
   const pokemons = [];
   snap.forEach(d => {
     const ev = d.data();
-    counts = countsAdd(counts, countsOfResult(ev.result));
+    const evCounts = eventCounts(ev) || { W: 0, L: 0, T: 0 };
+    counts = countsAdd(counts, evCounts);
     games += 1;
     if (pokemons.length < 2 && Array.isArray(ev.pokemons)) {
       for (const raw of ev.pokemons) {
@@ -120,7 +170,8 @@ export async function recomputeOpponent(opponentName) {
   const perDeck = new Map();
   snap.forEach(d => {
     const ev = d.data();
-    counts = countsAdd(counts, countsOfResult(ev.result));
+    const evCounts = eventCounts(ev) || { W: 0, L: 0, T: 0 };
+    counts = countsAdd(counts, evCounts);
     games += 1;
     const rawDeckKey = typeof ev.opponentDeckKey === "string" ? ev.opponentDeckKey.trim() : "";
     const rawDeckName = typeof ev.opponentDeck === "string" ? ev.opponentDeck.trim() : "";
@@ -206,10 +257,9 @@ export async function recomputeTournament(tournamentId) {
 
   // Conta por deck dentro do torneio
   const perDeck = new Map();
-  const add = (key, result) => {
+  const add = (key, inc) => {
     const cur = perDeck.get(key) || { W:0, L:0, T:0, games:0 };
-    const inc = countsOfResult(result);
-    cur.W += inc.W; cur.L += inc.L; cur.T += inc.T;
+    cur.W += inc.W || 0; cur.L += inc.L || 0; cur.T += inc.T || 0;
     cur.games += 1;
     perDeck.set(key, cur);
   };
@@ -217,7 +267,7 @@ export async function recomputeTournament(tournamentId) {
   snap.forEach(d => {
     const ev = d.data();
     const deckKey = ev.playerDeckKey || ev.deckKey || "";
-    add(deckKey, ev.result);
+    add(deckKey, eventCounts(ev) || { W: 0, L: 0, T: 0 });
   });
 
   const decks = [];
