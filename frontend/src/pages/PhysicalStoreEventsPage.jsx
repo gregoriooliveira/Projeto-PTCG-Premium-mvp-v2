@@ -703,9 +703,7 @@ const buildEventMatches = (event = {}, roundsEntry) => {
     ? normalized.map((round, index) => buildMatchEntryFromRound(round, index))
     : normalized.map((match, index) => buildMatchEntryFromLog(match, index));
 
-  return mapped
-    .filter((entry) => entry && (entry.opponent || entry.playerDeck.label || entry.opponentDeck.label))
-    .sort((a, b) => a.order - b.order);
+  return mapped.filter(Boolean).sort((a, b) => a.order - b.order);
 };
 
 export default function PhysicalStoreEventsPage() {
