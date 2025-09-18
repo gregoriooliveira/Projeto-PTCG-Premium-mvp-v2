@@ -10,6 +10,7 @@ import { getPhysicalRounds } from "../services/physicalApi.js";
 import DeckLabel from "../components/DeckLabel.jsx";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import { selectStoreFocusedMatches, STORE_FOCUSED_EVENT_TYPES } from "../PhysicalPageV2.jsx";
+import { dateKeyFromTs, tsFromDateKey } from "../utils/tz.js";
 
 // Função utilitária para normalizar strings
 const slugify = (s = "") => s
@@ -53,6 +54,8 @@ const parseDateValue = (value) => {
   if (value == null) return null;
   const str = String(value).trim();
   if (!str) return null;
+  const fromDateKey = tsFromDateKey(str);
+  if (Number.isFinite(fromDateKey)) return fromDateKey;
   const numeric = Number(str);
   if (Number.isFinite(numeric)) return numeric;
   const parsed = Date.parse(str);
@@ -226,12 +229,14 @@ const computeCountsFromRounds = (rounds = [], fallbackMatches = []) => {
 
 const extractEventTimestamp = (detail = {}, sampleRow = {}) => {
   const candidates = [
+    detail.dateKey,
     detail.date,
     detail.startDate,
     detail.startAt,
     detail.createdAt,
     detail.updatedAt,
     detail.ts,
+    sampleRow.dateKey,
     sampleRow.date,
     sampleRow.createdAt,
     sampleRow.updatedAt,
@@ -248,6 +253,14 @@ const extractEventTimestamp = (detail = {}, sampleRow = {}) => {
 
 const dayKeyFromTimestamp = (timestamp) => {
   if (timestamp == null) return "sem-data";
+  if (Number.isFinite(timestamp)) {
+    try {
+      const key = dateKeyFromTs(timestamp);
+      if (key) return key;
+    } catch (err) {
+      // ignore formatter issues and fallback to ISO logic below
+    }
+  }
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return "sem-data";
   return date.toISOString().slice(0, 10);
@@ -323,6 +336,7 @@ const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
 
     const timestamp = extractEventTimestamp(detail, sampleRow);
     const dayKey = dayKeyFromTimestamp(timestamp);
+    const dateKey = dayKey !== "sem-data" ? dayKey : null;
 
     const counts = computeCountsFromRounds(rounds, rows);
 
@@ -358,6 +372,7 @@ const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
       eventType: eventTypeRaw || sampleRow.eventType || eventTypeKey,
       eventTypeKey,
       date: timestamp,
+      dateKey,
       rounds,
       results: counts,
       detail,
@@ -877,6 +892,21 @@ export default function PhysicalStoreEventsPage() {
             const matches = buildEventMatches(ev, roundsEntry);
             const roundStatus = roundsEntry?.status;
             const storeLabel = ev.storeName || ev.detail?.storeName || ev.detail?.storeOrCity || "—";
+            const displayDate = (() => {
+              if (ev.dateKey) {
+                const [y, m, d] = ev.dateKey.split("-");
+                if (y && m && d) {
+                  return `${d}/${m}/${y}`;
+                }
+              }
+              if (ev.date != null) {
+                const dateObj = new Date(ev.date);
+                if (!Number.isNaN(dateObj.getTime())) {
+                  return format(dateObj, "dd/MM/yyyy", { locale: ptBR });
+                }
+              }
+              return "—";
+            })();
 
             const renderResultTone = (result) => {
               if (result === "W") return "text-emerald-400";
@@ -889,7 +919,7 @@ export default function PhysicalStoreEventsPage() {
               <div key={ev.id} className="border-b border-zinc-800/60">
                 <div className="grid grid-cols-[120px_1.4fr_1fr_1fr_160px] items-center px-5 py-4 gap-4 hover:bg-zinc-900/70 transition-colors">
                   <div className="text-zinc-200">
-                    {ev.date ? format(new Date(ev.date), "dd/MM/yyyy", { locale: ptBR }) : "—"}
+                    {displayDate}
                   </div>
                   <div className="text-zinc-300 truncate" title={ev.title || ev.eventType}>
                     {ev.title || ev.eventType || "—"}
