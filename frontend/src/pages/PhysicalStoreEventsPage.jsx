@@ -299,7 +299,6 @@ const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
       normalizeStoreEventTypeKey(eventTypeRaw) ||
       normalizeStoreEventTypeKey(sampleRow.eventType) ||
       normalizeStoreEventTypeKey(sampleRow.type);
-
     const title =
       detail.name ||
       detail.title ||
@@ -310,11 +309,6 @@ const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
       sampleRow.tourneyName ||
       sampleRow.notes ||
       eventId;
-
-    const eventTypeKey =
-      normalizeStoreEventTypeKey(eventTypeRaw) ||
-      normalizeStoreEventTypeKey(sampleRow.eventType) ||
-      normalizeStoreEventTypeKey(sampleRow.type);
 
     if (eventTypeKey && !STORE_FOCUSED_EVENT_TYPES.has(eventTypeKey)) {
       continue;
