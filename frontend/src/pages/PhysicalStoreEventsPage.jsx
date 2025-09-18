@@ -11,6 +11,7 @@ import DeckLabel from "../components/DeckLabel.jsx";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import { selectStoreFocusedMatches, STORE_FOCUSED_EVENT_TYPES } from "../PhysicalPageV2.jsx";
 import { dateKeyFromTs, tsFromDateKey } from "../utils/tz.js";
+import { subscribePhysicalRoundsChanged } from "../utils/physicalRoundsBus.js";
 
 // Função utilitária para normalizar strings
 const slugify = (s = "") => s
@@ -585,9 +586,15 @@ export default function PhysicalStoreEventsPage() {
   const [error, setError] = useState(null);
   const [roundsCache, setRoundsCache] = useState(() => new Map());
   const [expandedRows, setExpandedRows] = useState({});
+  const expandedRowsRef = useRef({});
   const isMountedRef = useRef(true);
 
   useEffect(() => {
+    expandedRowsRef.current = expandedRows;
+  }, [expandedRows]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
     };
@@ -608,90 +615,112 @@ export default function PhysicalStoreEventsPage() {
     return () => window.removeEventListener("hashchange", parse);
   }, []);
 
-  useEffect(() => {
-    let isActive = true;
+  const load = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const logsResult = await fetchAllPhysicalLogs({ pageSize: DEFAULT_LOG_PAGE_SIZE });
+      if (!isMountedRef.current) return;
 
-    const load = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const logsResult = await fetchAllPhysicalLogs({ pageSize: DEFAULT_LOG_PAGE_SIZE });
-        if (!isActive) return;
+      const rows = Array.isArray(logsResult?.rows) ? logsResult.rows : [];
 
-        const rows = Array.isArray(logsResult?.rows) ? logsResult.rows : [];
-
-        const eventIdSet = new Set();
-        for (const row of rows) {
-          const eventId = row?.eventId || row?.id;
-          if (eventId) {
-            eventIdSet.add(eventId);
-          }
-        }
-
-        const eventIds = Array.from(eventIdSet.values());
-        const detailsMap = new Map();
-        const CHUNK_SIZE = 8;
-
-        for (let i = 0; i < eventIds.length; i += CHUNK_SIZE) {
-          const chunk = eventIds.slice(i, i + CHUNK_SIZE);
-          const chunkResults = await Promise.all(
-            chunk.map(async (eventId) => {
-              try {
-                const detail = await getEvent(eventId);
-                return [eventId, detail];
-              } catch (err) {
-                console.warn(`[PhysicalStoreEventsPage] falha ao carregar evento ${eventId}`, err);
-                return [eventId, null];
-              }
-            }),
-          );
-          if (!isActive) return;
-          for (const [eventId, detail] of chunkResults) {
-            detailsMap.set(eventId, detail || {});
-          }
-        }
-
-        const enrichedRows = rows.map((row) => {
-          const eventId = row?.eventId || row?.id;
-          const detail = (eventId ? detailsMap.get(eventId) : null) || {};
-          return enrichLogRowWithDetail(row, detail);
-        });
-
-        const filteredRows = selectStoreFocusedMatches(enrichedRows);
-
-        const rowsByEventId = new Map();
-        for (const row of filteredRows) {
-          const eventId = row?.eventId || row?.id;
-          if (!eventId) continue;
-          if (!rowsByEventId.has(eventId)) rowsByEventId.set(eventId, []);
-          rowsByEventId.get(eventId).push(row);
-        }
-
-        const events = Array.from(rowsByEventId.keys()).map((eventId) => ({
-          id: eventId,
-          rows: rowsByEventId.get(eventId) || [],
-          detail: detailsMap.get(eventId) || {},
-        }));
-        if (!isActive) return;
-        setBaseEvents(events);
-      } catch (err) {
-        if (!isActive) return;
-        console.error("[PhysicalStoreEventsPage] falha ao carregar logs físicos", err);
-        setError(err instanceof Error ? err : new Error(String(err)));
-        setBaseEvents([]);
-      } finally {
-        if (isActive) {
-          setIsLoading(false);
+      const eventIdSet = new Set();
+      for (const row of rows) {
+        const eventId = row?.eventId || row?.id;
+        if (eventId) {
+          eventIdSet.add(eventId);
         }
       }
-    };
 
+      const eventIds = Array.from(eventIdSet.values());
+      const detailsMap = new Map();
+      const CHUNK_SIZE = 8;
+
+      for (let i = 0; i < eventIds.length; i += CHUNK_SIZE) {
+        const chunk = eventIds.slice(i, i + CHUNK_SIZE);
+        const chunkResults = await Promise.all(
+          chunk.map(async (eventId) => {
+            try {
+              const detail = await getEvent(eventId);
+              return [eventId, detail];
+            } catch (err) {
+              console.warn(`[PhysicalStoreEventsPage] falha ao carregar evento ${eventId}`, err);
+              return [eventId, null];
+            }
+          }),
+        );
+        if (!isMountedRef.current) return;
+        for (const [eventId, detail] of chunkResults) {
+          detailsMap.set(eventId, detail || {});
+        }
+      }
+
+      const enrichedRows = rows.map((row) => {
+        const eventId = row?.eventId || row?.id;
+        const detail = (eventId ? detailsMap.get(eventId) : null) || {};
+        return enrichLogRowWithDetail(row, detail);
+      });
+
+      const filteredRows = selectStoreFocusedMatches(enrichedRows);
+
+      const rowsByEventId = new Map();
+      for (const row of filteredRows) {
+        const eventId = row?.eventId || row?.id;
+        if (!eventId) continue;
+        if (!rowsByEventId.has(eventId)) rowsByEventId.set(eventId, []);
+        rowsByEventId.get(eventId).push(row);
+      }
+
+      const events = Array.from(rowsByEventId.keys()).map((eventId) => ({
+        id: eventId,
+        rows: rowsByEventId.get(eventId) || [],
+        detail: detailsMap.get(eventId) || {},
+      }));
+      if (!isMountedRef.current) return;
+      setBaseEvents(events);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      console.error("[PhysicalStoreEventsPage] falha ao carregar logs físicos", err);
+      setError(err instanceof Error ? err : new Error(String(err)));
+      setBaseEvents([]);
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const unsubscribe = subscribePhysicalRoundsChanged((eventId) => {
+      if (!isMountedRef.current) return;
+
+      setRoundsCache((prev) => {
+        if (!eventId) {
+          if (prev.size === 0) return prev;
+          return new Map();
+        }
+        if (!prev.has(eventId)) return prev;
+        const next = new Map(prev);
+        next.delete(eventId);
+        return next;
+      });
+
+      load();
+
+      if (eventId && expandedRowsRef.current?.[eventId]) {
+        Promise.resolve().then(() => ensureRoundsLoaded(eventId));
+      }
+    });
 
     return () => {
-      isActive = false;
+      unsubscribe();
     };
-  }, []);
+  }, [load, ensureRoundsLoaded]);
 
   const ensureRoundsLoaded = useCallback(
     (eventId) => {

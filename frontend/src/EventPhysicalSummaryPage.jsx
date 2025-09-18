@@ -12,6 +12,7 @@ import {
   deletePhysicalRound,
 } from "./services/physicalApi.js";
 import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
+import { emitPhysicalRoundsChanged } from "./utils/physicalRoundsBus.js";
 
 // helper: get store slug from hash query
 const getStoreFromHash = () => {
@@ -374,6 +375,7 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
       });
       setExpandedRoundId((prev) => (expandedId && prev === expandedId ? null : prev));
       showToast("Round excluído com sucesso!", "success");
+      emitPhysicalRoundsChanged(eventData.id);
       resetForm();
       setEditRoundIndex(null);
     } catch (err) {
@@ -552,6 +554,7 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
       );
       if (!Array.isArray(rounds) || rounds.length === 0) setShowForm(false);
     }
+    emitPhysicalRoundsChanged(eventData.id);
     resetForm();
   }
 
