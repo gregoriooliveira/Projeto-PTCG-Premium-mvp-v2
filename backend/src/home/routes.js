@@ -151,9 +151,23 @@ async function sourceSummary(prefix, limitDays){
   }));
   // decks
   const decksSnap = await db.collection(`${prefix}DecksAgg`).get();
-  const decks = decksSnap.docs.map(d=>d.data()).map(d => ({
-    deckKey: d.deckKey, counts: d.counts, wr: d.wr, avatars: (d.pokemons||[]), pokemons: (d.pokemons||[])
-  })).sort((a,b)=>b.wr-a.wr).slice(0,5);
+  const decks = decksSnap.docs
+    .map((doc) => doc.data() || {})
+    .map((d) => {
+      const counts = normalizeCounts(d.counts) || { W: 0, L: 0, T: 0 };
+      const storedWr = Number.isFinite(d?.wr) ? d.wr : null;
+      const wr = storedWr ?? wrPercent(counts);
+      const pokemons = Array.isArray(d.pokemons) ? d.pokemons : [];
+      return {
+        deckKey: d.deckKey,
+        counts,
+        wr,
+        avatars: pokemons,
+        pokemons,
+      };
+    })
+    .sort((a, b) => b.wr - a.wr)
+    .slice(0, 5);
   // opponents
   const oppSnap = await db.collection(`${prefix}OpponentsAgg`).get();
   const topOpponents = oppSnap.docs.map(doc => {
@@ -212,9 +226,21 @@ async function sourceSummary(prefix, limitDays){
   const recentTournaments = tourSnap.docs.map(d=>d.data());
 
   const summaryCounts = { ...counts, total: total(counts) };
+  const topDeck = decks[0]
+    ? {
+        deckKey: decks[0].deckKey,
+        wr: decks[0].wr,
+        avatars: decks[0].avatars,
+        pokemons: decks[0].pokemons,
+      }
+    : null;
   return {
-    summary: { counts: summaryCounts, wr: wrPercent(counts), topDeck: decks[0] ? { deckKey: decks[0].deckKey, wr: decks[0].wr, avatars: decks[0].avatars, pokemons: decks[0].pokemons } : null },
-    lastDays, topDecks: decks, topOpponents, recentTournaments, recentLogs
+    summary: { counts: summaryCounts, wr: wrPercent(counts), topDeck },
+    lastDays,
+    topDecks: decks,
+    topOpponents,
+    recentTournaments,
+    recentLogs,
   };
 }
 
