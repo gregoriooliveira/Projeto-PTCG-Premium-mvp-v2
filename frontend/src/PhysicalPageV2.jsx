@@ -532,7 +532,7 @@ const TournamentsSummaryWidget = ({ manualMatches }) => {
   );
 };
 
-const STORE_FOCUSED_EVENT_TYPES = new Set(["local", "challenge", "cup"]);
+export const STORE_FOCUSED_EVENT_TYPES = new Set(["local", "challenge", "cup"]);
 
 const normalizeStoreEventType = (value) => {
   const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
