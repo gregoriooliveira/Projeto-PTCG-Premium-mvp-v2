@@ -9,6 +9,7 @@ import {
   postPhysicalRound,
   getPhysicalRounds,
   updatePhysicalRound,
+  deletePhysicalRound,
 } from "./services/physicalApi.js";
 import { getPokemonIcon, FALLBACK } from "./services/pokemonIcons.js";
 
@@ -200,6 +201,7 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
   const [toast, setToast] = useState({ message: "", type: "info" });
   const showToast = (message, type = "info") => setToast({ message, type });
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeletingRound, setIsDeletingRound] = useState(false);
   // --- Voltar ao dia (quando vier do resumo do dia) ---
   const __qsHash = React.useMemo(() => {
     try {
@@ -289,7 +291,7 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
 
   const isEditing = editRoundIndex !== null;
   const editingNumber = isEditing ? (rounds[editRoundIndex]?.number ?? (editRoundIndex + 1)) : null;
-const [expandedRoundId, setExpandedRoundId] = useState(null);
+  const [expandedRoundId, setExpandedRoundId] = useState(null);
   const [showForm, setShowForm] = useState(true);
 
   const [editingEvent, setEditingEvent] = useState(false);
@@ -339,6 +341,47 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
       roundId: null,
       roundNumber: null,
     });
+  }
+
+  async function deleteCurrentRound() {
+    if (editRoundIndex === null) return;
+    const target = Array.isArray(rounds) ? rounds[editRoundIndex] : null;
+    if (!target) {
+      resetForm();
+      setEditRoundIndex(null);
+      return;
+    }
+    if (!eventData?.id) {
+      showToast("ID do evento não encontrado", "error");
+      return;
+    }
+    const roundIdentifier = target.roundId || target.id || null;
+    if (!roundIdentifier) {
+      showToast("ID do round não encontrado", "error");
+      return;
+    }
+    if (typeof window !== "undefined" && !window.confirm("Excluir este round?")) {
+      return;
+    }
+
+    try {
+      setIsDeletingRound(true);
+      await deletePhysicalRound(eventData.id, roundIdentifier);
+      const expandedId = target.id || target.roundId || null;
+      setRounds((prev) => {
+        if (!Array.isArray(prev)) return [];
+        return prev.filter((r) => (r?.roundId || r?.id) !== roundIdentifier);
+      });
+      setExpandedRoundId((prev) => (expandedId && prev === expandedId ? null : prev));
+      showToast("Round excluído com sucesso!", "success");
+      resetForm();
+      setEditRoundIndex(null);
+    } catch (err) {
+      console.error("Falha ao excluir round", err);
+      showToast("Não foi possível excluir o round. Tente novamente.", "error");
+    } finally {
+      setIsDeletingRound(false);
+    }
   }
 
   useEffect(() => {
@@ -922,9 +965,26 @@ const [expandedRoundId, setExpandedRoundId] = useState(null);
             <div className="mt-6 flex gap-3">
               <button className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold" onClick={validateAndSave}>{isEditing ? "Save edit" : "Add round"}
               </button>
-              <button className="px-4 py-2 rounded-xl border" onClick={resetForm}>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-xl border"
+                onClick={() => {
+                  resetForm();
+                  setEditRoundIndex(null);
+                }}
+              >
                 Cancel
               </button>
+              {isEditing ? (
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-xl border border-rose-600 text-rose-200 hover:bg-rose-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={deleteCurrentRound}
+                  disabled={isDeletingRound}
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
           </div>
         )}

@@ -30,3 +30,12 @@ export const updatePhysicalRound = async (eventId, roundId, payload) => {
     },
   );
 };
+
+export const deletePhysicalRound = async (eventId, roundId) => {
+  return api(
+    `/api/physical/events/${encodeURIComponent(eventId)}/rounds/${encodeURIComponent(roundId)}`,
+    {
+      method: "DELETE",
+    },
+  );
+};

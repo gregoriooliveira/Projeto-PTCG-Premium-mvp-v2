@@ -621,6 +621,46 @@ r.patch("/events/:eventId/rounds/:roundId", authMiddleware, async (req, res) => 
   }
 });
 
+r.delete("/events/:eventId/rounds/:roundId", authMiddleware, async (req, res) => {
+  try {
+    const eventId = String(req.params.eventId || "");
+    const roundId = String(req.params.roundId || "");
+    if (!eventId) return res.status(400).json({ error: "invalid_event" });
+    if (!roundId) return res.status(400).json({ error: "invalid_round" });
+
+    const eventsCol = db.collection("physicalEvents");
+    if (!eventsCol) return res.status(500).json({ error: "events_collection_unavailable" });
+
+    const eventRef = eventsCol.doc(eventId);
+    const eventSnap = await eventRef.get();
+    if (!eventSnap?.exists) {
+      return res.status(404).json({ error: "event_not_found" });
+    }
+
+    const roundsCol = eventRef.collection("rounds");
+    if (!roundsCol) return res.status(500).json({ error: "rounds_collection_unavailable" });
+
+    const roundRef = roundsCol.doc(roundId);
+    try {
+      await roundRef.delete();
+    } catch (error) {
+      console.error(
+        `[DELETE /physical/events/${eventId}/rounds/${roundId}] delete failed`,
+        error,
+      );
+      return res.status(500).json({ error: "round_delete_failed" });
+    }
+
+    const agg = await recomputeRoundsAgg(eventId);
+    await recomputeAllForEvent(agg?.prevEvent, agg?.nextEvent);
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("[DELETE /physical/events/:eventId/rounds/:roundId]", e);
+    return res.status(500).json({ error: "round_delete_failed" });
+  }
+});
+
 /** Summary for /tcg-physical */
 
 /** List recent events for widgets */

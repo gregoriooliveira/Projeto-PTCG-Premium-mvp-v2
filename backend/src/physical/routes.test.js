@@ -304,6 +304,16 @@ function getRoundPatchHandler() {
   return layer.route.stack[1].handle;
 }
 
+function getRoundDeleteHandler() {
+  const layer = router.stack.find(
+    (l) =>
+      l.route &&
+      l.route.path === "/events/:eventId/rounds/:roundId" &&
+      l.route.methods.delete,
+  );
+  return layer.route.stack[1].handle;
+}
+
 function getDeleteHandler() {
   const layer = router.stack.find(
     (l) => l.route && l.route.path === "/events/:id" && l.route.methods.delete,
@@ -502,6 +512,74 @@ describe("physical routes PATCH /events/:eventId/rounds/:roundId", () => {
       flags: { id: true, noShow: false, bye: false },
     });
     expect(eventsStore.evt1.stats.counts).toEqual({ W: 0, L: 0, T: 1 });
+    expect(recomputeAllForEvent).toHaveBeenCalledOnce();
+  });
+});
+
+describe("physical routes DELETE /events/:eventId/rounds/:roundId", () => {
+  beforeEach(() => {
+    eventsStore = {
+      evt1: {
+        eventId: "evt1",
+        stats: { counts: { W: 1, L: 1, T: 0 }, wr: 50 },
+      },
+    };
+    roundsStore = {
+      evt1: {
+        "round-1": {
+          roundId: "round-1",
+          result: "W",
+          g1: { result: "V", order: "1st" },
+          g2: { result: "", order: "" },
+          g3: { result: "", order: "" },
+          flags: { noShow: false, bye: false, id: false },
+          opponentName: "Ash",
+          opponentDeckName: "Pikachu", 
+          normOppDeckKey: "pikachu",
+        },
+        "round-2": {
+          roundId: "round-2",
+          result: "L",
+          g1: { result: "D", order: "1st" },
+          g2: { result: "", order: "" },
+          g3: { result: "", order: "" },
+          flags: { noShow: false, bye: false, id: false },
+          opponentName: "Misty",
+          opponentDeckName: "Water",
+          normOppDeckKey: "water",
+        },
+      },
+    };
+    recomputeAllForEvent.mockClear();
+  });
+
+  it("deletes existing round and recomputes aggregates", async () => {
+    const handler = getRoundDeleteHandler();
+    const req = { params: { eventId: "evt1", roundId: "round-1" } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(res.body).toEqual({ ok: true });
+    expect(roundsStore.evt1["round-1"]).toBeUndefined();
+    expect(Object.keys(roundsStore.evt1)).toEqual(["round-2"]);
+    expect(eventsStore.evt1.stats.counts).toEqual({ W: 0, L: 1, T: 0 });
+    expect(eventsStore.evt1.roundsCount).toBe(1);
+    expect(recomputeAllForEvent).toHaveBeenCalledOnce();
+    const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
+    expect(prevArg.stats.counts).toEqual({ W: 1, L: 1, T: 0 });
+    expect(nextArg.stats.counts).toEqual({ W: 0, L: 1, T: 0 });
+  });
+
+  it("returns success when round is missing", async () => {
+    const handler = getRoundDeleteHandler();
+    const req = { params: { eventId: "evt1", roundId: "round-9" } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(res.body).toEqual({ ok: true });
+    expect(roundsStore.evt1["round-2"]).toBeDefined();
     expect(recomputeAllForEvent).toHaveBeenCalledOnce();
   });
 });
