@@ -702,16 +702,242 @@ const buildMatchEntryFromLog = (match, index) => {
   };
 };
 
+const toTrimmedString = (value) => {
+  if (typeof value === "string") return value.trim();
+  if (value == null) return "";
+  return String(value).trim();
+};
+
+const sortAggregatedOpponents = (entries = [], orderList = []) => {
+  const normalizedEntries = Array.isArray(entries) ? [...entries] : [];
+  const normalizedOrder = Array.isArray(orderList)
+    ? orderList.map((name) => toTrimmedString(name)).filter(Boolean)
+    : [];
+
+  if (!normalizedEntries.length || !normalizedOrder.length) {
+    return normalizedEntries;
+  }
+
+  const buckets = new Map();
+  for (const entry of normalizedEntries) {
+    const primary = toTrimmedString(entry?.opponentName);
+    const secondary = primary || toTrimmedString(entry?.opponent);
+    const fallback = secondary || toTrimmedString(entry?.name);
+    const key = fallback;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(entry);
+  }
+
+  const ordered = [];
+  const used = new Set();
+
+  for (const name of normalizedOrder) {
+    const bucket = buckets.get(name);
+    if (!bucket || bucket.length === 0) continue;
+    const candidate = bucket.shift();
+    if (!candidate) continue;
+    ordered.push(candidate);
+    used.add(candidate);
+  }
+
+  for (const entry of normalizedEntries) {
+    if (!used.has(entry)) {
+      ordered.push(entry);
+      used.add(entry);
+    }
+  }
+
+  return ordered;
+};
+
+const collectPlayerDeckCandidatesFromRows = (rows = []) => {
+  const keyCandidates = [];
+  const nameCandidates = [];
+  if (!Array.isArray(rows)) return { keyCandidates, nameCandidates };
+
+  for (const row of rows) {
+    const pushIfValid = (value, target) => {
+      const trimmed = toTrimmedString(value);
+      if (trimmed) target.push(trimmed);
+    };
+
+    pushIfValid(row?.playerDeckKey, keyCandidates);
+    pushIfValid(row?.deckKey, keyCandidates);
+    pushIfValid(row?.playerDeckSlug, keyCandidates);
+    pushIfValid(row?.deckSlug, keyCandidates);
+
+    pushIfValid(row?.playerDeckName, nameCandidates);
+    pushIfValid(row?.playerDeck, nameCandidates);
+    pushIfValid(row?.deckName, nameCandidates);
+    pushIfValid(row?.deck, nameCandidates);
+  }
+
+  return { keyCandidates, nameCandidates };
+};
+
+const buildMatchEntryFromAggregate = (entry, index, context = {}) => {
+  if (!entry || typeof entry !== "object") return null;
+
+  const detail = context?.detail || {};
+  const opponentName = toTrimmedString(
+    entry?.opponentName || entry?.opponent || entry?.name,
+  );
+
+  const countsFromEntry =
+    normalizeCountsPayload(entry?.counts) || extractCountsFromSource(entry);
+  const counts = countsFromEntry ? { ...countsFromEntry } : null;
+  const result = counts ? resultFromCounts(counts) || "" : "";
+
+  const decks = Array.isArray(entry?.decks) ? entry.decks : [];
+  let preferredDeck = null;
+  if (entry?.topDeckKey) {
+    preferredDeck = decks.find((deck) => toTrimmedString(deck?.deckKey) === toTrimmedString(entry.topDeckKey));
+  }
+  if (!preferredDeck && entry?.topDeckName) {
+    preferredDeck = decks.find((deck) => toTrimmedString(deck?.deckName) === toTrimmedString(entry.topDeckName));
+  }
+  if (!preferredDeck && decks.length > 0) {
+    preferredDeck = decks[0];
+  }
+
+  const deckKeyCandidates = [];
+  const deckNameCandidates = [];
+  const pushDeckValue = (value, target) => {
+    const trimmed = toTrimmedString(value);
+    if (trimmed) target.push(trimmed);
+  };
+
+  pushDeckValue(entry?.topDeckKey, deckKeyCandidates);
+  pushDeckValue(preferredDeck?.deckKey, deckKeyCandidates);
+  for (const deck of decks) {
+    pushDeckValue(deck?.deckKey, deckKeyCandidates);
+  }
+
+  pushDeckValue(entry?.topDeckName, deckNameCandidates);
+  pushDeckValue(preferredDeck?.deckName, deckNameCandidates);
+  for (const deck of decks) {
+    pushDeckValue(deck?.deckName, deckNameCandidates);
+  }
+
+  const opponentDeck = deriveDeckLabel({
+    keyCandidates: deckKeyCandidates,
+    nameCandidates: deckNameCandidates,
+  });
+
+  const opponentPokemons = ensurePokemonHints(
+    entry?.topPokemons || preferredDeck?.pokemons,
+  );
+
+  const totalRounds = Number.isFinite(detail?.roundsCount)
+    ? Math.max(0, detail.roundsCount)
+    : null;
+  const roundNumber = index + 1;
+  const digits = totalRounds && totalRounds > 0 ? String(totalRounds).length : 0;
+  const paddedRoundNumber = digits > 1 ? String(roundNumber).padStart(digits, "0") : String(roundNumber);
+  const roundLabel = `R${paddedRoundNumber}`;
+
+  const basePlayerDeck =
+    context?.playerDeck && typeof context.playerDeck === "object"
+      ? context.playerDeck
+      : deriveDeckLabel();
+
+  const playerDeck = {
+    label: basePlayerDeck?.label || "",
+    key: basePlayerDeck?.key || "",
+  };
+
+  const userPokemons = Array.isArray(context?.userPokemons)
+    ? [...context.userPokemons]
+    : [];
+
+  const order =
+    Number.isFinite(entry?.order) && entry.order >= 0 ? Number(entry.order) : index;
+  const idBase = opponentName ? slugify(opponentName) : `agg-${index}`;
+  const id = entry?.id || `agg-${index}-${idBase}`;
+
+  return {
+    id,
+    order,
+    roundLabel,
+    opponent: opponentName,
+    playerDeck,
+    opponentDeck,
+    userPokemons,
+    opponentPokemons,
+    result,
+    counts,
+  };
+};
+
+const buildMatchesFromAggregates = (event = {}) => {
+  const detail = event?.detail || {};
+  const opponentsAgg = Array.isArray(detail?.opponentsAgg) ? detail.opponentsAgg : [];
+  if (!opponentsAgg.length) return [];
+
+  const orderedOpponents = sortAggregatedOpponents(opponentsAgg, detail?.opponentsList);
+
+  const rows = Array.isArray(event?.rows) ? event.rows : [];
+  const { keyCandidates, nameCandidates } = collectPlayerDeckCandidatesFromRows(rows);
+
+  const playerDeck = deriveDeckLabel({
+    keyCandidates: [
+      detail?.playerDeckKey,
+      detail?.deckKey,
+      detail?.playerDeckSlug,
+      detail?.deckSlug,
+      detail?.myDeckKey,
+      detail?.myDeckSlug,
+      ...keyCandidates,
+    ],
+    nameCandidates: [
+      detail?.playerDeckName,
+      detail?.playerDeck,
+      detail?.deckName,
+      detail?.deckTitle,
+      detail?.myDeckName,
+      detail?.myDeck,
+      ...nameCandidates,
+    ],
+  });
+
+  let userPokemons = ensurePokemonHints(
+    detail?.playerPokemons || detail?.userPokemons || detail?.myPokemons,
+  );
+  if (!userPokemons.length) {
+    for (const row of rows) {
+      const hints = ensurePokemonHints(
+        row?.userPokemons || row?.myPokemons || row?.playerPokemons,
+      );
+      if (hints.length) {
+        userPokemons = hints;
+        break;
+      }
+    }
+  }
+
+  return orderedOpponents
+    .map((entry, index) =>
+      buildMatchEntryFromAggregate(entry, index, { detail, playerDeck, userPokemons }),
+    )
+    .filter(Boolean);
+};
+
 const buildEventMatches = (event = {}, roundsEntry) => {
   const rounds = Array.isArray(roundsEntry?.rounds) ? roundsEntry.rounds : [];
   const hasRounds = rounds.length > 0;
-  const matchesSource = hasRounds ? rounds : event?.matches;
+  if (hasRounds) {
+    const mapped = rounds.map((round, index) => buildMatchEntryFromRound(round, index));
+    return mapped.filter(Boolean).sort((a, b) => a.order - b.order);
+  }
+
+  const aggregatedMatches = buildMatchesFromAggregates(event);
+  if (aggregatedMatches.length) {
+    return aggregatedMatches.sort((a, b) => a.order - b.order);
+  }
+
+  const matchesSource = event?.matches;
   const normalized = Array.isArray(matchesSource) ? matchesSource : [];
-
-  const mapped = hasRounds
-    ? normalized.map((round, index) => buildMatchEntryFromRound(round, index))
-    : normalized.map((match, index) => buildMatchEntryFromLog(match, index));
-
+  const mapped = normalized.map((match, index) => buildMatchEntryFromLog(match, index));
   return mapped.filter(Boolean).sort((a, b) => a.order - b.order);
 };
 
@@ -1216,3 +1442,5 @@ else if (hash.startsWith("#/tcg-fisico/eventos/loja")) {
   return render(<PhysicalStoreEventsPage allEvents={physicalEventsArray} />);
 }
 */
+
+export { buildEventMatches };
