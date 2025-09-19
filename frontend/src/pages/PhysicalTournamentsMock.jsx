@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   listPhysicalTournaments,
   suggestPhysicalTournaments,
@@ -121,11 +122,26 @@ const normalizeRound = (round, index = 0) => {
     (typeof round.finalResult === "string" ? round.finalResult : "");
   const normalizedResult = (rawResult ? rawResult.trim().toUpperCase() : "") || deriveResultFromCounts(counts) || "-";
   const roundNumber = round.round ?? round.roundNumber ?? round.number ?? round.roundIndex ?? null;
+  const logIdCandidates = [
+    round.logId,
+    round.logID,
+    round.log_id,
+    round.eventId,
+    round.eventID,
+    round.matchLogId,
+    round.matchId,
+    round.id,
+  ]
+    .map((value) => (value == null ? "" : String(value).trim()))
+    .filter(Boolean);
+  const logId = logIdCandidates[0] || "";
+
   const id =
-    round.id ||
-    round.logId ||
-    round.matchId ||
-    round.eventMatchId ||
+    (round.id && String(round.id).trim()) ||
+    logId ||
+    (round.matchLogId ? String(round.matchLogId).trim() : "") ||
+    (round.matchId ? String(round.matchId).trim() : "") ||
+    (round.eventMatchId ? String(round.eventMatchId).trim() : "") ||
     (round.eventId ? `${round.eventId}-${roundNumber ?? index + 1}` : "") ||
     `round-${index}`;
   return {
@@ -134,7 +150,8 @@ const normalizeRound = (round, index = 0) => {
     opponent: opponent || "—",
     opponentDeck: opponentDeck || "",
     opponentPokemons: round.opponentPokemons || round.oppPokemons,
-    eventId: round.eventId || round.matchId || round.logId || "",
+    eventId: round.eventId || logId || round.matchId || "",
+    logId,
     result: normalizedResult,
   };
 };
@@ -317,6 +334,34 @@ export default function TournamentsLivePage() {
     }
   }
 
+  const buildRoundHref = (round) => {
+    if (!round || typeof round !== "object") return null;
+    const targetRaw = round.logId || round.eventId || round.id || "";
+    const targetId = typeof targetRaw === "string" ? targetRaw.trim() : String(targetRaw || "").trim();
+    if (!targetId) return null;
+    const encodedId = encodeURIComponent(targetId);
+
+    let params = new URLSearchParams();
+    try {
+      const currentHash = window.location.hash || "";
+      const queryPart = currentHash.includes("?") ? currentHash.split("?")[1] : "";
+      if (queryPart) {
+        const currentParams = new URLSearchParams(queryPart);
+        const keysToPreserve = ["from", "type", "store", "date", "query"];
+        keysToPreserve.forEach((key) => {
+          const value = currentParams.get(key);
+          if (value) params.set(key, value);
+        });
+      }
+    } catch {
+      params = new URLSearchParams();
+    }
+
+    if (!params.has("from")) params.set("from", "torneios");
+    const suffix = params.toString();
+    return `#/tcg-fisico/eventos/${encodedId}${suffix ? `?${suffix}` : ""}`;
+  };
+
   return (
     <div className="min-h-screen w-full bg-zinc-950 text-zinc-100">
       <div className="mx-auto max-w-7xl px-4 py-6">
@@ -407,8 +452,13 @@ export default function TournamentsLivePage() {
                       <Td className="text-center">{wr}%</Td>
                       <Td className="px-4 py-3 text-right">
                         {canOpen ? (
-                          <button onClick={() => toggleOpen(tournamentId)} className="rounded-lg border border-zinc-700 px-3 py-1.5 hover:bg-zinc-800">
-                            {openId === tournamentId ? "Fechar" : "Detalhes"}
+                          <button
+                            type="button"
+                            onClick={() => toggleOpen(tournamentId)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-700 bg-zinc-800 text-sm text-zinc-200 hover:bg-zinc-700 transition"
+                          >
+                            {openId === tournamentId ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            <span>Partidas</span>
                           </button>
                         ) : <span className="text-zinc-600">—</span>}
                       </Td>
@@ -431,10 +481,17 @@ export default function TournamentsLivePage() {
                                 {rounds.length === 0 ? (
                                   <tr><td colSpan={4} className="px-3 py-3 text-center text-zinc-500">Sem partidas registradas.</td></tr>
                                 ) : rounds.map((r, idx) => {
-                                  const roundHref = r.eventId ? `#/tcg-fisico/eventos/${encodeURIComponent(r.eventId)}` : null;
-                                  const roundKey = r.id || `${tournamentId}-round-${idx}`;
+                                  const roundHref = buildRoundHref(r);
+                                  const roundKey = r.id || r.logId || `${tournamentId}-round-${idx}`;
                                   const rowClass = roundHref ? "border-b border-zinc-800 hover:bg-zinc-900/60 cursor-pointer" : "border-b border-zinc-800";
-                                  const onClick = roundHref ? () => { window.location.hash = roundHref; } : undefined;
+                                  const onClick = roundHref
+                                    ? (event) => {
+                                        event?.stopPropagation?.();
+                                        try {
+                                          window.location.hash = roundHref;
+                                        } catch {}
+                                      }
+                                    : undefined;
                                   return (
                                     <tr key={roundKey} className={rowClass} onClick={onClick}>
                                       <td className="px-3 py-2">{r.round || "-"}</td>
