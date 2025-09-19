@@ -137,4 +137,35 @@ describe("buildEventMatches", () => {
     expect(matches).toHaveLength(1);
     expect(matches[0].userPokemons).toEqual(["Miraidon EX", "Raikou V"]);
   });
+
+  it("uses string-only detail pokemons for player hints", () => {
+    const event = {
+      id: "evt-string-detail-pokemons",
+      rows: [
+        {
+          playerDeckKey: "lost-zone",
+          playerDeckName: "Lost Zone",
+        },
+      ],
+      detail: {
+        roundsCount: 1,
+        opponentsList: ["Dexter"],
+        pokemons: ["Miraidon EX", "  Raikou V  ", "Miraidon EX"],
+        opponentsAgg: [
+          {
+            opponentName: "Dexter",
+            counts: { W: 1, L: 0, T: 0 },
+            decks: [
+              { deckKey: "preferred", deckName: "Preferred Deck", pokemons: [] },
+            ],
+          },
+        ],
+      },
+    };
+
+    const matches = buildEventMatches(event, { rounds: [] });
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].userPokemons).toEqual(["Miraidon EX", "Raikou V"]);
+  });
 });
