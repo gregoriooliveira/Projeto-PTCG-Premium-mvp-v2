@@ -123,7 +123,19 @@ describe('physical aggregates eventCounts integration', () => {
     eventDocs.push({
       tournamentId: 'tour-1',
       playerDeckKey: 'deck-abc',
+      deckName: 'Lost Box',
+      tourneyName: 'City League',
+      date: '2024-05-10',
+      format: 'standard',
+      roundsCount: 5,
       stats: { counts: { W: 2, L: 0, T: 1 } }
+    });
+    eventDocs.push({
+      tournamentId: 'tour-1',
+      playerDeckKey: 'deck-xyz',
+      deckName: 'Gardevoir',
+      roundsCount: 3,
+      stats: { counts: { W: 1, L: 2, T: 0 } }
     });
 
     await recomputeTournament('tour-1');
@@ -132,8 +144,17 @@ describe('physical aggregates eventCounts integration', () => {
     expect(tournamentSetMock).toHaveBeenCalledWith(
       {
         tournamentId: 'tour-1',
+        name: 'City League',
+        dateISO: '2024-05-10',
+        format: 'standard',
+        deck: 'deck-abc',
+        deckName: 'Lost Box',
+        roundsCount: 5,
+        counts: { W: 3, L: 2, T: 1 },
+        wr: 50,
         decks: [
-          { deckKey: 'deck-abc', counts: { W: 2, L: 0, T: 1 }, games: 1, wr: 66.7 }
+          { deckKey: 'deck-abc', counts: { W: 2, L: 0, T: 1 }, games: 1, wr: 66.7 },
+          { deckKey: 'deck-xyz', counts: { W: 1, L: 2, T: 0 }, games: 1, wr: 33.3 }
         ]
       },
       { merge: true }
