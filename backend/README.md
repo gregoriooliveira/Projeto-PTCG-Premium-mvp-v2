@@ -66,6 +66,20 @@ fetch('/api/live/events', {
 
 - `GET    /api/health`
 - `GET    /api/home`
+  - Parâmetros de consulta:
+    - `source`: filtra a origem dos dados agregados. Aceita `live`, `physical` ou `all` (padrão). Quando `all`, os dados de Live
+      e Físico são mesclados; se as coleções físicas ainda não existirem, o backend faz fallback automático para retornar apenas
+      os dados de Live.
+    - `limit`: número de dias recentes considerados nas seções baseadas em datas. Se não informado, usa `5`.
+  - Estrutura da resposta:
+    - `summary`: agrega contagens totais (`counts`) e porcentagem de vitórias (`wr`), além de `topDeck` com o deck mais
+      eficiente.
+    - `lastDays`: lista dos últimos dias com atividade, contendo métricas diárias (`counts`, `wr`) e referência opcional ao
+      evento mais recente do dia (`event`).
+    - `topDecks`: decks mais performáticos, incluindo contagens, win rate (`wr`), avatares e Pokémon associados.
+    - `topOpponents`: oponentes mais frequentes com suas estatísticas agregadas, win rate e informações do deck típico.
+    - `recentTournaments`: últimos torneios registrados com metadados de data.
+    - `recentLogs`: recorte dos logs mais recentes, com identificação de evento, decks e Pokémon sugeridos.
 - `GET    /api/events`
 - `GET    /api/events/:id`
 - `POST   /api/events`
