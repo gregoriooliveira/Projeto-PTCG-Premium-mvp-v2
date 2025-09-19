@@ -128,7 +128,8 @@ describe('physical aggregates eventCounts integration', () => {
       date: '2024-05-10',
       format: 'standard',
       roundsCount: 5,
-      stats: { counts: { W: 2, L: 0, T: 1 } }
+      stats: { counts: { W: 2, L: 0, T: 1 } },
+      pokemons: ['Miraidon', 'raikou'],
     });
     eventDocs.push({
       tournamentId: 'tour-1',
@@ -155,7 +156,8 @@ describe('physical aggregates eventCounts integration', () => {
         decks: [
           { deckKey: 'deck-abc', counts: { W: 2, L: 0, T: 1 }, games: 1, wr: 66.7 },
           { deckKey: 'deck-xyz', counts: { W: 1, L: 2, T: 0 }, games: 1, wr: 33.3 }
-        ]
+        ],
+        pokemonHints: ['miraidon', 'raikou']
       },
       { merge: true }
     );
@@ -163,5 +165,27 @@ describe('physical aggregates eventCounts integration', () => {
       { tournamentId: 'tour-1', source: 'physical' },
       { merge: true }
     );
+  });
+
+  it('uses fallback pokemon hints when reference event has none', async () => {
+    eventDocs.push({
+      tournamentId: 'tour-2',
+      playerDeckKey: 'deck-abc',
+      roundsCount: 6,
+      stats: { counts: { W: 3, L: 1, T: 0 } },
+    });
+    eventDocs.push({
+      tournamentId: 'tour-2',
+      playerDeckKey: 'deck-abc',
+      roundsCount: 4,
+      stats: { counts: { W: 1, L: 1, T: 0 } },
+      playerPokemons: ['Iron Hands', 'Miraidon', 'Iron Hands'],
+    });
+
+    await recomputeTournament('tour-2');
+
+    expect(tournamentSetMock).toHaveBeenCalledTimes(1);
+    const payload = tournamentSetMock.mock.calls[0][0];
+    expect(payload.pokemonHints).toEqual(['iron-hands', 'miraidon']);
   });
 });
