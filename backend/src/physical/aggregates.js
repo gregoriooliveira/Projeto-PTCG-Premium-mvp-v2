@@ -250,6 +250,57 @@ function mergePokemonHints(target = [], source = []) {
   return list.slice(0, 2);
 }
 
+function sanitizePokemonHintsList(source) {
+  const arr = Array.isArray(source) ? source : source != null ? [source] : [];
+  const out = [];
+  for (const raw of arr) {
+    let value = "";
+    if (typeof raw === "string") {
+      value = raw;
+    } else if (raw && typeof raw === "object") {
+      for (const key of ["slug", "name", "id"]) {
+        const candidate = raw[key];
+        if (typeof candidate === "string" && candidate.trim()) {
+          value = candidate;
+          break;
+        }
+      }
+    } else if (raw != null) {
+      value = String(raw);
+    }
+    const slug = String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/-{2,}/g, "-")
+      .replace(/^-+|-+$/g, "");
+    if (!slug || out.includes(slug)) continue;
+    out.push(slug);
+    if (out.length >= 2) break;
+  }
+  return out;
+}
+
+function extractPokemonHintsFromEvent(ev = {}) {
+  const combined = [];
+  const push = (value) => {
+    if (value == null) return;
+    if (Array.isArray(value)) {
+      for (const item of value) combined.push(item);
+    } else {
+      combined.push(value);
+    }
+  };
+  push(ev.pokemonHints);
+  push(ev.pokemons);
+  push(ev.playerPokemons);
+  push(ev.userPokemons);
+  push(ev.myPokemons);
+  push(ev.deckPokemons);
+  push(ev.spriteIds);
+  return sanitizePokemonHintsList(combined);
+}
+
 export async function recomputeOpponent(opponentName) {
   const normalized = normalizeOpponentName(opponentName);
   if (!normalized) return;
@@ -441,6 +492,7 @@ export async function recomputeTournament(tournamentId) {
 
   let totalCounts = { W: 0, L: 0, T: 0 };
   let referenceEvent = null;
+  let aggregatedPokemonHints = [];
   snap.forEach(d => {
     const ev = d.data();
     const deckKey = ev.playerDeckKey || ev.deckKey || "";
@@ -448,6 +500,10 @@ export async function recomputeTournament(tournamentId) {
     add(deckKey, counts);
     totalCounts = countsAdd(totalCounts, counts);
     referenceEvent = pickTournamentReference(referenceEvent, ev);
+    const hints = extractPokemonHintsFromEvent(ev);
+    if (hints.length) {
+      aggregatedPokemonHints = mergePokemonHints(aggregatedPokemonHints, hints);
+    }
   });
 
   const decks = [];
@@ -457,6 +513,8 @@ export async function recomputeTournament(tournamentId) {
 
   const meta = extractTournamentMeta(referenceEvent || {});
   const wr = wrPercent(totalCounts);
+  const referencePokemonHints = extractPokemonHintsFromEvent(referenceEvent || {});
+  const pokemonHints = referencePokemonHints.length ? referencePokemonHints : aggregatedPokemonHints;
 
   await db.collection("physicalTournamentsAgg").doc(tournamentId).set(
     {
@@ -470,6 +528,7 @@ export async function recomputeTournament(tournamentId) {
       counts: totalCounts,
       wr,
       decks,
+      pokemonHints,
     },
     { merge: true }
   );
