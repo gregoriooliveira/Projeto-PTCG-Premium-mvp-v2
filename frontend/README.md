@@ -34,7 +34,12 @@ npm run preview
 As telas do TCG Físico vivem sob `#/tcg-fisico`:
 
 - `#/tcg-fisico` – visão geral
+- `#/tcg-fisico/eventos/loja` – listagem agregada por loja (aceita `#/tcg-fisico/eventos/loja/:loja` para pré-selecionar a loja)
 - `#/tcg-fisico/eventos/:id` – resumo e rounds de um evento
+
+A visão por loja escreve o filtro atual na hash (`StoreEventsPage.jsx`) e observa `hashchange` para manter a loja pré-selecionada ao seguir links profundos ou usar Voltar/Avançar (`PhysicalStoreEventsPage.jsx`), preservando os filtros ativos ao navegar.
+
+Quando um evento é aberto a partir da lista da loja, o resumo recebe `?store=` na hash (`StoreEventsPage.jsx`). `EventPhysicalSummaryPage.jsx` aproveita esse parâmetro para renderizar a navegação de retorno à loja, mantendo o usuário no contexto correto ao voltar.
 
 Navegação programática para a página de evento:
 
