@@ -438,7 +438,7 @@ const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
 
     const rows = Array.isArray(entry?.rows) ? entry.rows : [];
     const detail = entry?.detail || {};
-    the const sampleRow = rows[0] || {};
+    const sampleRow = rows[0] || {};
 
     const roundsEntry = roundsCache instanceof Map ? roundsCache.get(eventId) : null;
     const cachedRounds = roundsEntry && Array.isArray(roundsEntry.rounds) ? roundsEntry.rounds : null;
