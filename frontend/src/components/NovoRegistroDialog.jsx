@@ -10,6 +10,16 @@ import { useNavigate } from "react-router-dom";
 import { createEvent } from "../eventsRepo.js";
 import Toast from "./Toast.jsx";
 
+const InputLabel = ({ label, error, children }) => (
+  <label className="text-sm text-zinc-300">
+    <span className="inline-flex items-center gap-1">
+      {label}
+      {error && <span className="text-red-400 ml-2">{error}</span>}
+    </span>
+    {children}
+  </label>
+);
+
 /**
  * NovoRegistroDialog (robusto, inputs não-controlados p/ digitação fluida)
  * - Overlay fixo com backdrop
@@ -194,16 +204,6 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     }
   };
 
-  const InputLabel = ({ label, error, children }) => (
-    <label className="text-sm text-zinc-300">
-      <span className="inline-flex items-center gap-1">
-        {label}
-        {error && <span className="text-red-400 ml-2">{error}</span>}
-      </span>
-      {children}
-    </label>
-  );
-
   return (
     <>
       {renderTrigger && (
@@ -270,18 +270,10 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
                   <select
                     value={tipo}
                     onChange={(e) => {
-                      const preserveNome = nomeRef.current
-                        ? nomeRef.current.value
-                        : "";
                       setTipo(e.target.value);
                       // limpar o campo ao lado quando trocar o tipo
                       if (lojaCidadeRef.current)
                         lojaCidadeRef.current.value = "";
-                      // reatribui o nome após a atualização do tipo garantindo que o valor não se perca
-                      setTimeout(() => {
-                        if (nomeRef.current)
-                          nomeRef.current.value = preserveNome;
-                      }, 0);
                     }}
                     className="mt-1 w-full rounded-md bg-zinc-900 border border-zinc-800 px-3 py-2 text-zinc-100"
                   >
