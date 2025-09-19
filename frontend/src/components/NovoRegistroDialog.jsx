@@ -24,20 +24,44 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
   const isControlled = typeof openProp === "boolean";
   const [openState, setOpenState] = useState(false);
   const open = isControlled ? openProp : openState;
+  const [toast, setToast] = useState({ message: "", type: "info" });
+  const showToast = (message, type = "info") => setToast({ message, type });
+
+  const [errors, setErrors] = useState({});
+  const [serverError, setServerError] = useState("");
+
+  const navigate = useNavigate();
+
+  // ---- Refs (inputs não-controlados para digitação fluida)
+  const diaRef = useRef(null);
+  const nomeRef = useRef(null);
+  const lojaCidadeRef = useRef(null);
+  const formatoRef = useRef(null);
+  const classificacaoRef = useRef(null);
+
+  // "Tipo do Evento" controlado (para alternar os campos ao lado)
+  const [tipo, setTipo] = useState("");
+
+  // valores iniciais
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
+  const defaultDia = `${yyyy}-${mm}-${dd}`;
+
   const setOpen = (v) => {
     if (!isControlled) setOpenState(v);
     if (typeof onOpenChange === "function") onOpenChange(v);
-    if (!v) setServerError("");
+    if (!v) {
+      resetForm();
+      setServerError("");
+    }
   };
-  const [toast, setToast] = useState({ message: "", type: "info" });
-  const showToast = (message, type = "info") => setToast({ message, type });
 
   useImperativeHandle(ref, () => ({
     open: () => setOpen(true),
     close: () => setOpen(false),
   }));
-
-  const navigate = useNavigate();
 
   // foco inicial ao abrir
   useEffect(() => {
@@ -58,23 +82,6 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
-
-  // ---- Refs (inputs não-controlados para digitação fluida)
-  const diaRef = useRef(null);
-  const nomeRef = useRef(null);
-  const lojaCidadeRef = useRef(null);
-  const formatoRef = useRef(null);
-  const classificacaoRef = useRef(null);
-
-  // "Tipo do Evento" controlado (para alternar os campos ao lado)
-  const [tipo, setTipo] = useState("");
-
-  // valores iniciais
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const dd = String(today.getDate()).padStart(2, "0");
-  const defaultDia = `${yyyy}-${mm}-${dd}`;
 
   const tiposOrdenados = [
     "CLP",
@@ -118,9 +125,6 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
   const exigeCidade =
     tipo === "Regional" || tipo === "Internacional" || tipo === "Mundial";
 
-  const [errors, setErrors] = useState({});
-  const [serverError, setServerError] = useState("");
-
   const validate = () => {
     const e = {};
     const dia = diaRef.current?.value?.trim();
@@ -140,6 +144,16 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     setErrors(e);
     return Object.keys(e).length === 0;
   };
+
+  function resetForm() {
+    setErrors({});
+    setTipo("");
+    if (diaRef.current) diaRef.current.value = defaultDia;
+    if (nomeRef.current) nomeRef.current.value = "";
+    if (lojaCidadeRef.current) lojaCidadeRef.current.value = "";
+    if (formatoRef.current) formatoRef.current.value = "";
+    if (classificacaoRef.current) classificacaoRef.current.value = "";
+  }
 
   const onSubmit = async (e) => {
     e?.preventDefault?.();
@@ -165,12 +179,13 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
       if (typeof onCreated === "function")
         onCreated({ ...payload, eventId });
 
-        if (eventId) {
-          navigate(`/tcg-fisico/eventos/${encodeURIComponent(eventId)}`);
-        } else {
-          showToast("ID do evento não encontrado", "error");
-          return;
-        }
+      if (eventId) {
+        navigate(`/tcg-fisico/eventos/${encodeURIComponent(eventId)}`);
+        resetForm();
+      } else {
+        showToast("ID do evento não encontrado", "error");
+        return;
+      }
 
       setOpen(false);
     } catch (err) {
