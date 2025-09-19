@@ -70,6 +70,20 @@ function mapIncomingEvent(ev, hashId) {
   };
   return mapped;
 }
+
+function formatDateYMD(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const [datePart] = raw.split(/[T\s]/);
+  const segments = datePart.split("-");
+  if (segments.length < 3) return raw;
+  const [year, month, day] = segments;
+  if (!year || !month || !day) return raw;
+  const y = year.padStart(4, "0");
+  const m = month.padStart(2, "0");
+  const d = day.padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 const RESULT_COLORS = {
   V: "bg-emerald-600 text-white",
   D: "bg-rose-600 text-white",
@@ -601,7 +615,7 @@ export default function EventPhysicalSummaryPage({ eventFromProps }) {
           <div className="mb-2"><BackButton href={__hrefToStore || __hrefToDay || __hrefToTournaments || "#/tcg-fisico"} label={__fromStore ? `Voltar à loja (${__fromStore})` : (__fromDate ? `Voltar ao dia (${__fromDate})` : "Voltar ao TCG Físico")} /></div>
 <h1 className="text-3xl md:text-4xl font-extrabold">{eventData.name}</h1>
           <div className="text-sm opacity-80 mt-1">
-            {eventData.date ? new Date(eventData.date).toLocaleDateString() : "—"}
+            {formatDateYMD(eventData.date) || "—"}
           </div>
           <div className="flex gap-2 mt-2">
             <span className="text-xs px-2 py-1 rounded-full border opacity-90">
