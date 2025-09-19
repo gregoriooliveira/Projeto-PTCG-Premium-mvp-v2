@@ -919,6 +919,64 @@ const buildMatchesFromAggregates = (event = {}) => {
     detail?.playerPokemons || detail?.userPokemons || detail?.myPokemons,
   );
   if (!userPokemons.length) {
+    const detailPokemons = detail?.pokemons;
+    if (detailPokemons) {
+      const playerSideTokens = new Set(["you", "player", "user", "me", "self"]);
+      const normalizeSide = (value) =>
+        typeof value === "string" ? value.trim().toLowerCase() : "";
+      const collectedCandidates = [];
+      const appendPokemonCandidates = (value) => {
+        if (!value) return;
+        if (Array.isArray(value)) {
+          for (const entry of value) {
+            appendPokemonCandidates(entry);
+          }
+          return;
+        }
+        if (value && typeof value === "object") {
+          if (Array.isArray(value.pokemons)) {
+            appendPokemonCandidates(value.pokemons);
+            return;
+          }
+          const pokemonKey = Object.keys(value).find((key) =>
+            typeof key === "string" && key.toLowerCase().includes("pokemon"),
+          );
+          if (pokemonKey && value[pokemonKey] !== value) {
+            appendPokemonCandidates(value[pokemonKey]);
+            return;
+          }
+        }
+        collectedCandidates.push(value);
+      };
+
+      if (Array.isArray(detailPokemons)) {
+        for (const entry of detailPokemons) {
+          if (!entry || typeof entry !== "object") continue;
+          const sides = [
+            normalizeSide(entry.side),
+            normalizeSide(entry.label),
+            normalizeSide(entry.role),
+            normalizeSide(entry.team),
+            normalizeSide(entry.player),
+            normalizeSide(entry.user),
+          ];
+          if (!sides.some((side) => side && playerSideTokens.has(side))) continue;
+          appendPokemonCandidates(entry);
+        }
+      } else if (typeof detailPokemons === "object") {
+        for (const [key, value] of Object.entries(detailPokemons)) {
+          if (!playerSideTokens.has(normalizeSide(key))) continue;
+          appendPokemonCandidates(value);
+        }
+      }
+
+      const hints = ensurePokemonHints(collectedCandidates);
+      if (hints.length) {
+        userPokemons = hints;
+      }
+    }
+  }
+  if (!userPokemons.length) {
     for (const row of rows) {
       const hints = ensurePokemonHints(
         row?.userPokemons || row?.myPokemons || row?.playerPokemons,
