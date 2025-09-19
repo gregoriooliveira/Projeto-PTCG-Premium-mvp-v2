@@ -4,7 +4,7 @@ import { db } from "../firestore.js";
 import { normalizeDeckKey, normalizeName } from "../utils/normalize.js";
 import { wrPercent, countsAdd, countsOfResult } from "../utils/wr.js";
 import { dateKeyFromTs, timestampFromDateKey } from "../utils/tz.js";
-import { recomputeAllForEvent } from "./aggregates.js";
+import { recomputeAllForEvent, recomputeTournament } from "./aggregates.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const r = Router();
@@ -55,6 +55,81 @@ function normalizeNullableString(value) {
   if (value == null) return null;
   const normalized = normalizeName(value);
   return normalized ? normalized : null;
+}
+
+const TOURNAMENT_TYPE_KEYWORDS = [
+  "regional",
+  "special event",
+  "internacional",
+  "mundial",
+];
+
+function trimNullable(value) {
+  if (value == null) return null;
+  const trimmed = String(value).trim();
+  return trimmed ? trimmed : null;
+}
+
+function slugifyEventName(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function isTournamentType(type) {
+  const normalized = trimNullable(type);
+  if (!normalized) return false;
+  const ascii = normalized
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return TOURNAMENT_TYPE_KEYWORDS.some((keyword) => ascii.includes(keyword));
+}
+
+function deriveTournamentFields(base = {}, { keepManualName = false } = {}) {
+  const date = trimNullable(base.date) || trimNullable(base.dateISO);
+  const type = trimNullable(base.type) || trimNullable(base.tipo);
+  const name = trimNullable(base.name) || trimNullable(base.nome);
+  const manualName = trimNullable(base.tourneyName) || trimNullable(base.tournamentName);
+  const limitlessId = trimNullable(base.limitlessId);
+  const tournamentLike = isTournamentType(type);
+
+  const manualProvided = keepManualName && !!manualName;
+  let resolvedName = null;
+  if (limitlessId) {
+    resolvedName = manualName || (tournamentLike ? name : null);
+  } else if (tournamentLike) {
+    if (manualProvided && manualName) {
+      resolvedName = manualName;
+    } else if (name) {
+      resolvedName = name;
+    } else if (manualName) {
+      resolvedName = manualName;
+    }
+  } else if (manualProvided && manualName) {
+    resolvedName = manualName;
+  }
+
+  const slug = resolvedName ? slugifyEventName(resolvedName) : "";
+  let tournamentId = null;
+  if (limitlessId) {
+    tournamentId = `limitless:${limitlessId}`;
+  } else if (tournamentLike && resolvedName && slug && date) {
+    tournamentId = `manual:${slug}:${date}`;
+  }
+
+  return {
+    tourneyName: resolvedName || null,
+    tournamentId: tournamentId || null,
+    slug,
+    isTournament: tournamentLike,
+    hasLimitless: !!limitlessId,
+  };
 }
 
 function normalizePatchDate(value) {
@@ -110,15 +185,18 @@ r.post("/events", authMiddleware, async (req, res) => {
   } else {
     date = dateKeyFromTs(createdAt);
   }
-  const name = body.nome ? String(body.nome) : null;
-  const type = body.tipo ? String(body.tipo) : null;
-  const storeOrCity = body.local ? String(body.local) : null;
-  const format = body.formato ? String(body.formato) : null;
-  const classification = body.classificacao ? String(body.classificacao) : null;
+  const name = normalizeNullableString(body.nome);
+  const type = normalizeNullableString(body.tipo);
+  const storeOrCity = normalizeNullableString(body.local);
+  const format = normalizeNullableString(body.formato);
+  const classification = normalizeNullableString(body.classificacao);
   const isOnlineTourney = !!body.isOnlineTourney;
-  const limitlessId = body.limitlessId || null;
-  const tourneyName = body.tourneyName || null;
-  const tournamentId = limitlessId ? `limitless:${limitlessId}` : (tourneyName ? `manual:${tourneyName.toLowerCase().replace(/\s+/g,'-')}:${date}` : null);
+  const limitlessId = normalizeNullableString(body.limitlessId);
+  const initialTourneyName = normalizeNullableString(body.tourneyName);
+  const { tourneyName, tournamentId } = deriveTournamentFields(
+    { name, type, date, limitlessId, tourneyName: initialTourneyName },
+    { keepManualName: initialTourneyName != null },
+  );
   const result = body.result || null; // opcional (front pode calcular)
   const round = body.round || null;
   const placement = body.placement || null;
@@ -184,9 +262,31 @@ r.patch("/events/:id", authMiddleware, async (req, res) => {
   if ("type" in req.body) update.type = normalizeNullableString(req.body.type);
   if ("format" in req.body) update.format = normalizeNullableString(req.body.format);
   if ("classification" in req.body) update.classification = normalizeNullableString(req.body.classification);
+  if ("limitlessId" in req.body) update.limitlessId = normalizeNullableString(req.body.limitlessId);
+  if ("tourneyName" in req.body) update.tourneyName = normalizeNullableString(req.body.tourneyName);
   if ("date" in req.body) {
     const normalizedDate = normalizePatchDate(req.body.date);
     if (normalizedDate !== undefined) update.date = normalizedDate;
+  }
+
+  const explicitTourneyName = hasOwn(req.body, "tourneyName");
+  const normalizedCurrentName = trimNullable(current.name) || trimNullable(current.nome);
+  const normalizedCurrentTourneyName = trimNullable(current.tourneyName);
+  const hadCustomTourneyName =
+    !explicitTourneyName &&
+    normalizedCurrentTourneyName &&
+    (!normalizedCurrentName || normalizedCurrentTourneyName !== normalizedCurrentName);
+  const keepManualName = explicitTourneyName || hadCustomTourneyName;
+
+  const nextDoc = { ...current, ...update };
+  const derived = deriveTournamentFields(nextDoc, { keepManualName });
+  const normalizedNextTourneyName = trimNullable(nextDoc.tourneyName);
+  if (normalizedNextTourneyName !== derived.tourneyName) {
+    update.tourneyName = derived.tourneyName;
+  }
+  const normalizedNextTournamentId = trimNullable(nextDoc.tournamentId);
+  if (normalizedNextTournamentId !== derived.tournamentId) {
+    update.tournamentId = derived.tournamentId;
   }
 
   await docRef.set(update, { merge: true });
@@ -195,6 +295,84 @@ r.patch("/events/:id", authMiddleware, async (req, res) => {
   await recomputeAllForEvent(current, updatedDoc);
 
   res.json(updatedDoc);
+});
+
+r.post("/events/maintenance/backfill-tournaments", authMiddleware, async (req, res) => {
+  try {
+    const eventsCol = db.collection("physicalEvents");
+    const snap = await eventsCol.get();
+    const docs = Array.isArray(snap?.docs) ? snap.docs : [];
+    let processed = 0;
+    let updated = 0;
+    const tournamentsToRecompute = new Set();
+
+    for (const doc of docs) {
+      processed += 1;
+      const docId = doc?.id || "";
+      if (!docId) continue;
+      try {
+        let data;
+        try {
+          data = typeof doc.data === "function" ? doc.data() : doc.data;
+        } catch {
+          data = null;
+        }
+        if (!data || typeof data !== "object") data = {};
+
+        const derived = deriveTournamentFields(data, { keepManualName: true });
+        if (!derived.isTournament && !derived.hasLimitless) continue;
+
+        const currentTourneyName = trimNullable(data.tourneyName);
+        const currentTournamentId = trimNullable(data.tournamentId);
+        const update = {};
+        if (!currentTourneyName && derived.tourneyName) {
+          update.tourneyName = derived.tourneyName;
+        }
+        if (!currentTournamentId && derived.tournamentId) {
+          update.tournamentId = derived.tournamentId;
+        }
+        if (!Object.keys(update).length) continue;
+
+        await eventsCol.doc(docId).set(update, { merge: true });
+
+        const eventId = data.eventId || docId;
+        const prevEvent = { eventId, ...data };
+        const nextEvent = { ...prevEvent, ...update };
+        updated += 1;
+        if (nextEvent.tournamentId) {
+          tournamentsToRecompute.add(nextEvent.tournamentId);
+        }
+        await recomputeAllForEvent(prevEvent, nextEvent);
+      } catch (error) {
+        console.error(`[backfill-tournaments] failed for ${docId}`, error);
+      }
+    }
+
+    if (tournamentsToRecompute.size) {
+      await Promise.all(
+        Array.from(tournamentsToRecompute).map(async (tournamentId) => {
+          try {
+            await recomputeTournament(tournamentId);
+          } catch (error) {
+            console.error(
+              `[backfill-tournaments] recomputeTournament failed for ${tournamentId}`,
+              error,
+            );
+          }
+        }),
+      );
+    }
+
+    res.json({
+      ok: true,
+      processed,
+      updated,
+      tournaments: Array.from(tournamentsToRecompute),
+    });
+  } catch (error) {
+    console.error("[POST /physical/events/maintenance/backfill-tournaments]", error);
+    res.status(500).json({ ok: false, error: "backfill_failed" });
+  }
 });
 
 /** Delete event */
