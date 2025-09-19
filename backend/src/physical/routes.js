@@ -962,11 +962,39 @@ r.get("/tournaments/:id", async (req, res) => {
   const baseDoc = await db.collection("physicalTournamentsAgg").doc(id).get();
   const tournament = baseDoc.exists ? baseDoc.data() : { tournamentId: id };
   const snap = await db.collection("physicalEvents").where("tournamentId","==", id).orderBy("round").limit(200).get();
-  const rounds = snap.docs.map(d => {
-    const ev = d.data();
+  const rounds = snap.docs.map((d, index) => {
+    const ev = d.data() || {};
+    const logIdCandidates = [
+      ev.logId,
+      ev.eventId,
+      ev.matchLogId,
+      ev.matchId,
+      ev.id,
+      d.id,
+    ]
+      .map(value => value == null ? "" : String(value).trim())
+      .filter(Boolean);
+    const logId = logIdCandidates[0] || "";
+    const roundNumber = ev.round ?? ev.roundNumber ?? ev.number ?? null;
+    const roundIdCandidates = [
+      ev.roundId,
+      ev.id,
+      logId,
+      `${id}-${roundNumber != null ? roundNumber : index + 1}`,
+      d.id,
+    ]
+      .map(value => value == null ? "" : String(value).trim())
+      .filter(Boolean);
+    const roundId = roundIdCandidates[0] || `round-${index}`;
     return {
-      id: ev.eventId, opponent: ev.opponent, opponentDeck: ev.opponentDeck,
-      result: ev.result, round: ev.round, logId: ev.eventId
+      id: roundId,
+      opponent: ev.opponent,
+      opponentDeck: ev.opponentDeck,
+      opponentPokemons: ev.opponentPokemons || ev.oppPokemons || null,
+      result: ev.result,
+      round: roundNumber != null ? roundNumber : index + 1,
+      logId: logId || roundId,
+      eventId: ev.eventId || logId || roundId,
     };
   });
   res.json({ tournament, rounds });
