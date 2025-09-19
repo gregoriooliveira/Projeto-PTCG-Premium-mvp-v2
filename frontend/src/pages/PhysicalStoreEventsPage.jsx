@@ -951,7 +951,11 @@ const buildMatchesFromAggregates = (event = {}) => {
 
       if (Array.isArray(detailPokemons)) {
         for (const entry of detailPokemons) {
-          if (!entry || typeof entry !== "object") continue;
+          if (!entry) continue;
+          if (typeof entry !== "object") {
+            appendPokemonCandidates(entry);
+            continue;
+          }
           const sides = [
             normalizeSide(entry.side),
             normalizeSide(entry.label),
