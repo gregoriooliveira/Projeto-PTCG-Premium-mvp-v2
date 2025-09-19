@@ -1136,46 +1136,124 @@ r.get("/tournaments/suggest", async (req, res) => {
 
 /** Tournament detail */
 r.get("/tournaments/:id", async (req, res) => {
-  const id = req.params.id;
-  const baseDoc = await db.collection("physicalTournamentsAgg").doc(id).get();
-  const tournament = baseDoc.exists ? baseDoc.data() : { tournamentId: id };
-  const snap = await db.collection("physicalEvents").where("tournamentId","==", id).orderBy("round").limit(200).get();
-  const rounds = snap.docs.map((d, index) => {
-    const ev = d.data() || {};
-    const logIdCandidates = [
-      ev.logId,
-      ev.eventId,
-      ev.matchLogId,
-      ev.matchId,
-      ev.id,
-      d.id,
-    ]
-      .map(value => value == null ? "" : String(value).trim())
-      .filter(Boolean);
-    const logId = logIdCandidates[0] || "";
-    const roundNumber = ev.round ?? ev.roundNumber ?? ev.number ?? null;
-    const roundIdCandidates = [
-      ev.roundId,
-      ev.id,
-      logId,
-      `${id}-${roundNumber != null ? roundNumber : index + 1}`,
-      d.id,
-    ]
-      .map(value => value == null ? "" : String(value).trim())
-      .filter(Boolean);
-    const roundId = roundIdCandidates[0] || `round-${index}`;
-    return {
-      id: roundId,
-      opponent: ev.opponent,
-      opponentDeck: ev.opponentDeck,
-      opponentPokemons: ev.opponentPokemons || ev.oppPokemons || null,
-      result: ev.result,
-      round: roundNumber != null ? roundNumber : index + 1,
-      logId: logId || roundId,
-      eventId: ev.eventId || logId || roundId,
-    };
-  });
-  res.json({ tournament, rounds });
+  try {
+    const id = String(req.params.id || "");
+    const baseDoc = await db.collection("physicalTournamentsAgg").doc(id).get();
+    const tournament = baseDoc.exists ? baseDoc.data() : { tournamentId: id };
+    const rounds = [];
+    const eventsSnap = await db
+      .collection("physicalEvents")
+      .where("tournamentId", "==", id)
+      .limit(200)
+      .get();
+    for (const eventDoc of eventsSnap.docs) {
+      let eventData;
+      try {
+        eventData = typeof eventDoc.data === "function" ? eventDoc.data() : eventDoc.data;
+      } catch {
+        eventData = null;
+      }
+      if (!eventData || typeof eventData !== "object") continue;
+      const eventIdCandidates = [eventData.eventId, eventDoc.id]
+        .map((value) => (value == null ? "" : String(value).trim()))
+        .filter(Boolean);
+      const parentEventId = eventIdCandidates[0] || "";
+      const logIdCandidates = [
+        eventData.logId,
+        eventData.matchLogId,
+        eventData.matchId,
+        eventData.eventId,
+        eventDoc.id,
+      ]
+        .map((value) => (value == null ? "" : String(value).trim()))
+        .filter(Boolean);
+      const parentLogId = logIdCandidates[0] || parentEventId;
+      let roundsSnap;
+      try {
+        roundsSnap = await db
+          .collection("physicalEvents")
+          .doc(eventDoc.id)
+          .collection("rounds")
+          .orderBy("number")
+          .get();
+      } catch (error) {
+        console.error(
+          `[GET /physical/tournaments/${id}] rounds lookup failed for ${eventDoc.id}`,
+          error,
+        );
+        continue;
+      }
+      const docs = Array.isArray(roundsSnap?.docs) ? roundsSnap.docs : [];
+      if (!docs.length) continue;
+      let roundIndex = 0;
+      for (const roundDoc of docs) {
+        roundIndex += 1;
+        let roundData;
+        try {
+          roundData = typeof roundDoc.data === "function" ? roundDoc.data() : roundDoc.data;
+        } catch {
+          roundData = null;
+        }
+        if (!roundData || typeof roundData !== "object") continue;
+        const numberCandidates = [roundData.number, roundData.round, roundData.roundNumber];
+        let roundNumber = null;
+        for (const candidate of numberCandidates) {
+          const parsed = Number(candidate);
+          if (Number.isFinite(parsed)) {
+            roundNumber = parsed;
+            break;
+          }
+        }
+        const fallbackIdByNumber =
+          parentEventId && roundNumber != null ? `${parentEventId}-${roundNumber}` : null;
+        const fallbackIdByIndex = parentEventId ? `${parentEventId}-${roundIndex}` : null;
+        const roundIdCandidates = [
+          roundData.roundId,
+          roundDoc.id,
+          fallbackIdByNumber,
+          fallbackIdByIndex,
+        ]
+          .map((value) => (value == null ? "" : String(value).trim()))
+          .filter(Boolean);
+        const roundId = roundIdCandidates[0] || roundDoc.id || `round-${roundIndex - 1}`;
+        const opponentNameRaw = normalizeName(roundData.opponentName || roundData.opponent || "");
+        const opponentName = opponentNameRaw || null;
+        const opponentDeckNameRaw = normalizeName(
+          roundData.opponentDeckName || roundData.opponentDeck || "",
+        );
+        const opponentDeckName = opponentDeckNameRaw || null;
+        const deckKeySource =
+          roundData.normOppDeckKey ||
+          (opponentDeckName ? normalizeDeckKey(opponentDeckName) : "");
+        const normalizedDeckKey = deckKeySource ? normalizeDeckKey(deckKeySource) : "";
+        const normOppDeckKey = normalizedDeckKey || null;
+        const rawResult =
+          typeof roundData.result === "string" ? roundData.result.trim().toUpperCase() : "";
+        const result = rawResult || computeRoundResult(roundData) || "";
+        const pokemonHints = extractPokemonSlugs(roundData);
+        rounds.push({
+          ...roundData,
+          roundId,
+          id: roundId,
+          number: roundNumber,
+          round: roundNumber,
+          opponentName,
+          opponent: opponentName,
+          opponentDeckName,
+          opponentDeck: opponentDeckName,
+          normOppDeckKey,
+          result,
+          opponentPokemons: pokemonHints,
+          logId: parentLogId || parentEventId || roundId,
+          eventId: parentEventId || parentLogId || roundId,
+        });
+      }
+    }
+    res.json({ tournament, rounds });
+  } catch (e) {
+    console.error("[GET /physical/tournaments/:id]", e);
+    res.status(500).json({ error: "tournament_lookup_failed" });
+  }
 });
 
 

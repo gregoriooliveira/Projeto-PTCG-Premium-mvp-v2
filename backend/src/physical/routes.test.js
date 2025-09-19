@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 let eventsStore = {};
 let roundsStore = {};
 let rawLogsStore = {};
+let tournamentsStore = {};
 
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
@@ -27,6 +28,10 @@ function createRoundSnapshot(eventId, roundId, roundData) {
     },
   };
 }
+
+beforeEach(() => {
+  tournamentsStore = {};
+});
 
 const db = {
   collection: (collectionName) => {
@@ -251,6 +256,32 @@ const db = {
         },
       };
     }
+    if (collectionName === "physicalTournamentsAgg") {
+      return {
+        doc: (id) => ({
+          async get() {
+            const exists = Object.prototype.hasOwnProperty.call(
+              tournamentsStore,
+              id,
+            );
+            const snapshot = exists ? clone(tournamentsStore[id]) : undefined;
+            return {
+              exists,
+              data: () => snapshot,
+            };
+          },
+          async set(data, options = {}) {
+            const current = tournamentsStore[id] || {};
+            tournamentsStore[id] = options.merge
+              ? { ...clone(current), ...clone(data) }
+              : clone(data);
+          },
+          async delete() {
+            delete tournamentsStore[id];
+          },
+        }),
+      };
+    }
     if (collectionName === "rawLogs") {
       return {
         doc: (id) => ({
@@ -346,6 +377,13 @@ function getLogsHandler() {
   return layer.route.stack[0].handle;
 }
 
+function getTournamentDetailHandler() {
+  const layer = router.stack.find(
+    (l) => l.route && l.route.path === "/tournaments/:id" && l.route.methods.get,
+  );
+  return layer.route.stack[0].handle;
+}
+
 function createRes() {
   return {
     status(code) {
@@ -358,6 +396,105 @@ function createRes() {
     },
   };
 }
+
+describe("physical routes GET /tournaments/:id", () => {
+  beforeEach(() => {
+    eventsStore = {};
+    roundsStore = {};
+    rawLogsStore = {};
+    tournamentsStore = {};
+    recomputeAllForEvent.mockClear();
+    recomputeTournament.mockClear();
+  });
+
+  it("aggregates rounds from tournament events", async () => {
+    tournamentsStore["tour-1"] = { tournamentId: "tour-1", name: "Regional" };
+    eventsStore = {
+      evt1: { eventId: "evt1", logId: "log-evt1", tournamentId: "tour-1" },
+      evt2: { eventId: "evt2", tournamentId: "tour-1" },
+      evt3: { eventId: "evt3", tournamentId: "tour-x" },
+    };
+    roundsStore = {
+      evt1: {
+        r1: {
+          roundId: "r1",
+          number: 1,
+          opponentName: "  Player   One  ",
+          opponentDeckName: "  Lost   Box  ",
+          normOppDeckKey: "lost box",
+          result: "w",
+          oppMonASlug: "gardevoir",
+          oppMonBSlug: "zacian",
+        },
+      },
+      evt2: {
+        r2: {
+          roundId: "r2",
+          number: 3,
+          opponentName: "Player Two",
+          opponentDeckName: "Charizard ex",
+          normOppDeckKey: "",
+          oppMonA: { slug: "charizard-ex" },
+          oppMonB: "pidgeot-ex",
+          g1: { result: "V", order: "F" },
+          g2: { result: "V", order: "S" },
+        },
+      },
+    };
+
+    const handler = getTournamentDetailHandler();
+    const req = { params: { id: "tour-1" } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(res.body).toBeDefined();
+    expect(res.body.tournament).toEqual({ tournamentId: "tour-1", name: "Regional" });
+    expect(Array.isArray(res.body.rounds)).toBe(true);
+    expect(res.body.rounds).toHaveLength(2);
+    expect(res.body.rounds[0]).toEqual(
+      expect.objectContaining({
+        roundId: "r1",
+        id: "r1",
+        number: 1,
+        round: 1,
+        opponentName: "Player One",
+        opponentDeckName: "Lost Box",
+        normOppDeckKey: "lost box",
+        result: "W",
+        opponentPokemons: ["gardevoir", "zacian"],
+        logId: "log-evt1",
+        eventId: "evt1",
+      }),
+    );
+    expect(res.body.rounds[1]).toEqual(
+      expect.objectContaining({
+        roundId: "r2",
+        id: "r2",
+        number: 3,
+        round: 3,
+        opponentName: "Player Two",
+        opponentDeckName: "Charizard ex",
+        normOppDeckKey: "charizard ex",
+        result: "W",
+        opponentPokemons: ["charizard-ex", "pidgeot-ex"],
+        logId: "evt2",
+        eventId: "evt2",
+      }),
+    );
+  });
+
+  it("returns fallback when tournament or rounds are missing", async () => {
+    const handler = getTournamentDetailHandler();
+    const req = { params: { id: "unknown-tour" } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(res.body.tournament).toEqual({ tournamentId: "unknown-tour" });
+    expect(res.body.rounds).toEqual([]);
+  });
+});
 
 describe("physical routes POST /events", () => {
   beforeEach(() => {
