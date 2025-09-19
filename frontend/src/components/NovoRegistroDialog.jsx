@@ -103,6 +103,7 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     "Liga Local",
     "Mundial",
     "Partida Amistosa",
+    "Special Event",
     "Regional",
   ].sort((a, b) => a.localeCompare(b, "pt-BR"));
 
@@ -133,7 +134,10 @@ const NovoRegistroDialog = forwardRef(function NovoRegistroDialog(
     tipo === "Challenge" ||
     tipo === "CLP";
   const exigeCidade =
-    tipo === "Regional" || tipo === "Internacional" || tipo === "Mundial";
+    tipo === "Regional" ||
+    tipo === "Internacional" ||
+    tipo === "Mundial" ||
+    tipo === "Special Event";
 
   const validate = () => {
     const e = {};
