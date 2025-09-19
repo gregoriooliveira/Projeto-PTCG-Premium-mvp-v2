@@ -103,6 +103,10 @@ describe("EventPhysicalSummaryPage", () => {
     });
 
     await waitFor(() => {
+      expect(screen.getByText("2024-01-01")).toBeTruthy();
+    });
+
+    await waitFor(() => {
       expect(screen.getByText("R1")).toBeTruthy();
     });
 
