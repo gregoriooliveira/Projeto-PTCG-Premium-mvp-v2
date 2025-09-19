@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   listPhysicalTournaments,
@@ -7,6 +7,7 @@ import {
 } from "../services/physicalApi.js";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import DeckLabel from "../components/DeckLabel.jsx";
+import { subscribePhysicalRoundsChanged } from "../utils/physicalRoundsBus.js";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
 const BASE_HASH = "#/tcg-fisico/torneios";
@@ -211,7 +212,7 @@ export default function TournamentsLivePage() {
   const [openId, setOpenId] = useState(null);
   const [openRounds, setOpenRounds] = useState({});
 
-  const runSearch = async (query = "") => {
+  const runSearch = useCallback(async (query = "") => {
     try {
       setLoading(true);
       const data = await fetchPhysicalTournaments(query);
@@ -221,7 +222,7 @@ export default function TournamentsLivePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const buildSuggestionList = (entries = []) =>
     (Array.isArray(entries) ? entries : [])
@@ -264,6 +265,50 @@ export default function TournamentsLivePage() {
       window.removeEventListener("hashchange", onHash);
     };
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = subscribePhysicalRoundsChanged(async (eventId) => {
+      const normalizedEventId = (() => {
+        if (typeof eventId === "string") return eventId.trim();
+        if (eventId == null) return "";
+        return String(eventId).trim();
+      })();
+
+      setOpenRounds((prev) => {
+        if (!normalizedEventId) {
+          if (Object.keys(prev).length === 0) return prev;
+          return {};
+        }
+        if (!Object.prototype.hasOwnProperty.call(prev, normalizedEventId)) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[normalizedEventId];
+        return next;
+      });
+
+      await runSearch(q);
+
+      if (!openId) return;
+
+      try {
+        const rounds = await fetchPhysicalTournamentRounds(openId);
+        setOpenRounds((prev) => ({
+          ...prev,
+          [openId]: Array.isArray(rounds) ? rounds : [],
+        }));
+      } catch {
+        setOpenRounds((prev) => ({
+          ...prev,
+          [openId]: [],
+        }));
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [openId, q, runSearch]);
 
   async function onChangeQuery(e) {
     const v = e.target.value;
