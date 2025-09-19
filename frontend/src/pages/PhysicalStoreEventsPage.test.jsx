@@ -57,4 +57,43 @@ describe("buildEventMatches", () => {
       expect(match.userPokemons).toEqual(["Comfey", "Sableye"]);
     });
   });
+
+  it("uses deck pokemons when aggregate top hints are empty", () => {
+    const event = {
+      id: "evt-hints",
+      rows: [
+        {
+          playerDeckKey: "lost-zone",
+          playerDeckName: "Lost Zone",
+          userPokemons: ["Comfey", "Sableye"],
+        },
+      ],
+      detail: {
+        roundsCount: 1,
+        opponentsList: ["Dexter"],
+        opponentsAgg: [
+          {
+            opponentName: "Dexter",
+            counts: { W: 1, L: 0, T: 0 },
+            topDeckKey: "preferred",
+            topDeckName: "Preferred Deck",
+            topPokemons: [],
+            decks: [
+              { deckKey: "preferred", deckName: "Preferred Deck", pokemons: [] },
+              {
+                deckKey: "backup",
+                deckName: "Backup Deck",
+                pokemons: ["Miraidon EX", { name: "Raikou V " }],
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const matches = buildEventMatches(event, { rounds: [] });
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].opponentPokemons).toEqual(["Miraidon EX", "Raikou V"]);
+  });
 });

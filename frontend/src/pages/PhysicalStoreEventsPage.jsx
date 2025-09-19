@@ -824,9 +824,24 @@ const buildMatchEntryFromAggregate = (entry, index, context = {}) => {
     nameCandidates: deckNameCandidates,
   });
 
-  const opponentPokemons = ensurePokemonHints(
-    entry?.topPokemons || preferredDeck?.pokemons,
-  );
+  let opponentPokemons = ensurePokemonHints(entry?.topPokemons);
+  if (!opponentPokemons.length) {
+    const deckCandidates = [];
+    if (preferredDeck) deckCandidates.push(preferredDeck);
+    for (const deck of decks) {
+      if (!deck) continue;
+      if (preferredDeck && deck === preferredDeck) continue;
+      deckCandidates.push(deck);
+    }
+
+    for (const deck of deckCandidates) {
+      const hints = ensurePokemonHints(deck?.pokemons);
+      if (hints.length) {
+        opponentPokemons = hints;
+        break;
+      }
+    }
+  }
 
   const totalRounds = Number.isFinite(detail?.roundsCount)
     ? Math.max(0, detail.roundsCount)
