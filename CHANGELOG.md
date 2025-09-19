@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 ### Backend
+- Reworked `/api/home` aggregation to accept `source=all|live|physical` and `limit` query params, merge live/physical snapshots when requested, and enrich recent logs/opponents with normalized Pokémon hints and counts. (`backend/src/home/routes.js`).
 - Recompute physical aggregates from round data (`backend/src/physical/aggregates.js`).
 - Add `counts` field to the `recentLogs` response of `/api/home` (`backend/src/home/routes.js`).
 - Parse debounce via frontend; backend parser improved for English short logs.
@@ -21,6 +22,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `GET /api/live/logs` falls back to in-memory scan and sort when `orderBy` index is unavailable.
 
 ### Frontend
+- `#/tcg-fisico/eventos/loja/:store?` carrega a loja do hash, normaliza o valor selecionado e atualiza a navegação ao trocar a opção, mantendo filtros e ordenação na listagem. (`frontend/src/StoreEventsPage.jsx`).
+- Sanitiza pistas de Pokémon ao montar o detalhe das partidas, evitando duplicatas e normalizando valores antes de exibir ícones. (`frontend/src/pages/PhysicalStoreEventsPage.jsx`, `frontend/src/pages/TCGLivePage.jsx`).
 - `#/oponentes` combina agregados e logs de `/api/live` e `/api/physical`, deduplica e ordena os resultados e constrói link dinâmico para `#/tcg-fisico/eventos/:id`.
 - As chamadas de fallback rodam em paralelo e cada log leva o `source` que indica qual endpoint o originou.
 - `ImportLogsModal`: label updated to "(obrigatório)" and input marked `required`.
