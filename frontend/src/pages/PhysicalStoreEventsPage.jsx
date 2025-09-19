@@ -438,7 +438,7 @@ const buildGroupedStoreEvents = (events = [], roundsCache = new Map()) => {
 
     const rows = Array.isArray(entry?.rows) ? entry.rows : [];
     const detail = entry?.detail || {};
-    const sampleRow = rows[0] || {};
+    the const sampleRow = rows[0] || {};
 
     const roundsEntry = roundsCache instanceof Map ? roundsCache.get(eventId) : null;
     const cachedRounds = roundsEntry && Array.isArray(roundsEntry.rounds) ? roundsEntry.rounds : null;
@@ -582,6 +582,15 @@ const computeOrderValue = (entry, fallbackIndex = 0) => {
   }
 
   return fallbackIndex;
+};
+
+// === Normalizador do payload de rounds ===
+const extractRoundsArray = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.rounds)) return payload.rounds;
+  if (payload && Array.isArray(payload.matches)) return payload.matches;
+  if (payload && Array.isArray(payload.data)) return extractRoundsArray(payload.data);
+  return [];
 };
 
 const buildMatchEntryFromRound = (round, index) => {
@@ -846,13 +855,14 @@ export default function PhysicalStoreEventsPage() {
 
       (async () => {
         try {
-          const rounds = await getPhysicalRounds(eventId);
+          const resp = await getPhysicalRounds(eventId);
+          const rounds = extractRoundsArray(resp);
           if (!isMountedRef.current) return;
           setRoundsCache((prev) => {
             const next = new Map(prev);
             next.set(eventId, {
               status: "loaded",
-              rounds: Array.isArray(rounds) ? rounds : [],
+              rounds, // sempre um array
             });
             return next;
           });
@@ -1029,7 +1039,7 @@ export default function PhysicalStoreEventsPage() {
             <div className="mt-2 text-4xl font-semibold">{filtered.length}</div>
             <div className="text-xs mt-1 text-zinc-500">após filtros</div>
           </div>
-          {/* Aqui pode-se calcular WR e Pontos como na página de torneios físico */}
+          {/* Espaço para futuros KPIs (WR, Pontos) */}
         </div>
 
         {/* TABELA */}
