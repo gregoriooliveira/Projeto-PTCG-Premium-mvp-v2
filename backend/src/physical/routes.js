@@ -784,6 +784,26 @@ r.get("/summary", async (req, res) => {
   res.json({ summary, lastDays, topDecks: decks, topOpponents, recentTournaments, recentLogs });
 });
 
+/** List available days */
+r.get("/days", async (req, res) => {
+  try {
+    const snap = await db
+      .collection("physicalDays")
+      .orderBy("date", "desc")
+      .get();
+    const dates = [];
+    snap.forEach((doc) => {
+      const data = doc.data() || {};
+      const value = typeof data.date === "string" && data.date ? data.date : doc.id;
+      if (value) dates.push(value);
+    });
+    res.json({ dates });
+  } catch (e) {
+    console.error("[GET /physical/days]", e);
+    res.status(500).json({ error: "days_list_failed" });
+  }
+});
+
 /** Day details */
 r.get("/days/:date", async (req, res) => {
   const date = req.params.date;
@@ -794,21 +814,68 @@ r.get("/days/:date", async (req, res) => {
     .limit(200)
     .get();
   const events = snap.docs.map(d => {
-  const ev = d.data();
-  return {
-    eventId: ev.eventId,
-    createdAt: ev.createdAt || null,
-    time: ev.time || null,
-    result: ev.result ?? null,
-    playerDeck: ev.deckName ?? ev.deck ?? null,
-    opponentDeck: ev.opponentDeck ?? null,
-    opponent: ev.opponent || ev.opponentName || ev.opp || null,
-    tournamentId: ev.tournamentId ?? null,
-    tournamentName: ev.tourneyName || ev.limitlessId || null,
-    round: ev.round || null
-  };
-});
-  let counts = {W:0,L:0,T:0}; for (const e of events) counts = countsAdd(counts, countsOfResult(e.result));
+    const ev = d.data();
+    const counts = eventCounts(ev);
+    let matches = null;
+    if (counts) {
+      let total = 0;
+      for (const key of ["W", "L", "T"]) {
+        const value = Number(counts[key] || 0);
+        if (Number.isFinite(value)) total += value;
+      }
+      matches = total;
+    } else if (ev.roundsCount != null) {
+      const rc = Number(ev.roundsCount);
+      if (Number.isFinite(rc)) matches = rc;
+    }
+    const storeOrCity =
+      typeof ev.storeOrCity === "string" && ev.storeOrCity
+        ? ev.storeOrCity
+        : typeof ev.storeName === "string" && ev.storeName
+          ? ev.storeName
+          : typeof ev.location === "string" && ev.location
+            ? ev.location
+            : null;
+    const name =
+      typeof ev.name === "string" && ev.name
+        ? ev.name
+        : typeof ev.tourneyName === "string" && ev.tourneyName
+          ? ev.tourneyName
+          : typeof ev.tournamentName === "string" && ev.tournamentName
+            ? ev.tournamentName
+            : null;
+    const type =
+      typeof ev.type === "string" && ev.type
+        ? ev.type
+        : ev.tournamentId
+          ? "tournament"
+          : null;
+    return {
+      eventId: ev.eventId,
+      createdAt: ev.createdAt || null,
+      time: ev.time || null,
+      result: ev.result ?? null,
+      playerDeck: ev.deckName ?? ev.deck ?? null,
+      opponentDeck: ev.opponentDeck ?? null,
+      opponent: ev.opponent || ev.opponentName || ev.opp || null,
+      tournamentId: ev.tournamentId ?? null,
+      tournamentName: ev.tourneyName || ev.limitlessId || null,
+      round: ev.round || null,
+      counts: counts || null,
+      matches,
+      storeOrCity,
+      name,
+      type,
+      format: ev.format || null,
+      classification: ev.classification || null,
+      roundsCount: ev.roundsCount ?? null,
+    };
+  });
+  let counts = { W: 0, L: 0, T: 0 };
+  for (const e of events) {
+    const evCounts = e.counts || countsOfResult(e.result) || { W: 0, L: 0, T: 0 };
+    counts = countsAdd(counts, evCounts);
+  }
   const wr = wrPercent(counts);
   res.json({ date, summary:{ counts, wr }, events });
 });
@@ -1006,6 +1073,10 @@ function computeEventTimestamp(ev = {}) {
     if (typeof value === "string") {
       const trimmed = value.trim();
       if (!trimmed) return null;
+      if (/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(trimmed)) {
+        const parsedIso = Date.parse(trimmed);
+        if (!Number.isNaN(parsedIso)) return parsedIso;
+      }
       const fromDateKey = timestampFromDateKey(trimmed);
       if (Number.isFinite(fromDateKey)) return fromDateKey;
       const numeric = Number(trimmed);
