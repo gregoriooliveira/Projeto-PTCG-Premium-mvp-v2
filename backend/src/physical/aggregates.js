@@ -48,6 +48,88 @@ function eventCounts(ev = {}) {
   );
 }
 
+function valueToMillis(value) {
+  if (!value) return 0;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : 0;
+  }
+  if (typeof value === "object") {
+    if (typeof value.toMillis === "function") {
+      try {
+        const result = value.toMillis();
+        if (Number.isFinite(result)) return result;
+      } catch {}
+    }
+    if (typeof value.getTime === "function") {
+      const result = value.getTime();
+      if (Number.isFinite(result)) return result;
+    }
+    if (typeof value.seconds === "number") {
+      const seconds = Number(value.seconds);
+      const nanos = Number(value.nanoseconds || value.nanosecond || value._nanoseconds || 0);
+      if (Number.isFinite(seconds) && Number.isFinite(nanos)) {
+        return seconds * 1000 + nanos / 1e6;
+      }
+      if (Number.isFinite(seconds)) return seconds * 1000;
+    }
+  }
+  return 0;
+}
+
+function tournamentCandidateScore(ev = {}) {
+  const rounds = Number(ev.roundsCount);
+  const normalizedRounds = Number.isFinite(rounds) ? rounds : -1;
+  const timestamp = Math.max(
+    valueToMillis(ev.updatedAt),
+    valueToMillis(ev.createdAt),
+    valueToMillis(ev.dateISO),
+    valueToMillis(ev.date),
+    valueToMillis(ev.time)
+  );
+  return { rounds: normalizedRounds, timestamp };
+}
+
+function pickTournamentReference(current, candidate) {
+  if (!candidate || typeof candidate !== "object") return current;
+  if (!current || typeof current !== "object") return candidate;
+  const curScore = tournamentCandidateScore(current);
+  const nextScore = tournamentCandidateScore(candidate);
+  if (nextScore.rounds > curScore.rounds) return candidate;
+  if (nextScore.rounds < curScore.rounds) return current;
+  if (nextScore.timestamp > curScore.timestamp) return candidate;
+  return current;
+}
+
+function extractTournamentMeta(ev = {}) {
+  const name =
+    (typeof ev.tourneyName === "string" && ev.tourneyName) ||
+    (typeof ev.tournamentName === "string" && ev.tournamentName) ||
+    (typeof ev.name === "string" && ev.name) ||
+    null;
+  const dateISO =
+    (typeof ev.dateISO === "string" && ev.dateISO) ||
+    (typeof ev.date === "string" && ev.date) ||
+    null;
+  const format = typeof ev.format === "string" && ev.format ? ev.format : null;
+  const deckKey =
+    (typeof ev.playerDeckKey === "string" && ev.playerDeckKey) ||
+    (typeof ev.deckKey === "string" && ev.deckKey) ||
+    null;
+  const deckName =
+    (typeof ev.deckName === "string" && ev.deckName) ||
+    (typeof ev.playerDeckName === "string" && ev.playerDeckName) ||
+    (typeof ev.playerDeck === "string" && ev.playerDeck) ||
+    (typeof ev.deck === "string" && ev.deck) ||
+    null;
+  const rounds = Number(ev.roundsCount);
+  const roundsCount = Number.isFinite(rounds) ? rounds : null;
+  return { name, dateISO, format, deck: deckKey, deckName, roundsCount };
+}
+
 /** Garante ID seguro para usar em doc() */
 function safeDocId(s) {
   return encodeURIComponent(String(s ?? ""));
@@ -357,10 +439,15 @@ export async function recomputeTournament(tournamentId) {
     perDeck.set(key, cur);
   };
 
+  let totalCounts = { W: 0, L: 0, T: 0 };
+  let referenceEvent = null;
   snap.forEach(d => {
     const ev = d.data();
     const deckKey = ev.playerDeckKey || ev.deckKey || "";
-    add(deckKey, eventCounts(ev) || { W: 0, L: 0, T: 0 });
+    const counts = eventCounts(ev) || { W: 0, L: 0, T: 0 };
+    add(deckKey, counts);
+    totalCounts = countsAdd(totalCounts, counts);
+    referenceEvent = pickTournamentReference(referenceEvent, ev);
   });
 
   const decks = [];
@@ -368,8 +455,22 @@ export async function recomputeTournament(tournamentId) {
     decks.push({ deckKey, counts: {W:c.W, L:c.L, T:c.T}, games: c.games, wr: wrPercent(c) });
   }
 
+  const meta = extractTournamentMeta(referenceEvent || {});
+  const wr = wrPercent(totalCounts);
+
   await db.collection("physicalTournamentsAgg").doc(tournamentId).set(
-    { tournamentId, decks },
+    {
+      tournamentId,
+      name: meta.name,
+      dateISO: meta.dateISO,
+      format: meta.format,
+      deck: meta.deck,
+      deckName: meta.deckName,
+      roundsCount: meta.roundsCount,
+      counts: totalCounts,
+      wr,
+      decks,
+    },
     { merge: true }
   );
 
