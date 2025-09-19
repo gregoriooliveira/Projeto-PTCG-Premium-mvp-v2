@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { getPhysicalDay, listPhysicalDays } from "../services/physicalApi.js";
 
 const TypeBadge = ({ type }) => {
@@ -47,6 +47,24 @@ const formatOptionDate = (date) => {
   } catch (e) {
     return date;
   }
+};
+
+const normalizeDateSegment = (value) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    return decodeURIComponent(trimmed);
+  } catch (error) {
+    return trimmed;
+  }
+};
+
+const extractDateFromPath = (candidate) => {
+  if (typeof candidate !== "string" || !candidate) return null;
+  const match = candidate.match(/\/tcg-fisico\/eventos\/data\/([^/?#]+)/i);
+  if (!match || !match[1]) return null;
+  return normalizeDateSegment(match[1]);
 };
 
 const computeMatches = (event = {}) => {
@@ -110,7 +128,21 @@ const resolveLocation = (event = {}) => {
 
 export default function PhysicalDateEventsPage() {
   const navigate = useNavigate();
-  const { dateParam } = useParams();
+  const location = useLocation();
+  const { date: routeDate } = useParams();
+
+  const selectedDate = useMemo(() => {
+    const normalizedFromParam = normalizeDateSegment(routeDate);
+    if (normalizedFromParam) return normalizedFromParam;
+
+    const fromPathname = extractDateFromPath(location.pathname);
+    if (fromPathname) return fromPathname;
+
+    const fromHash = extractDateFromPath(location.hash);
+    if (fromHash) return fromHash;
+
+    return null;
+  }, [routeDate, location.hash, location.pathname]);
 
   const [dates, setDates] = useState([]);
   const [datesLoading, setDatesLoading] = useState(true);
@@ -121,8 +153,8 @@ export default function PhysicalDateEventsPage() {
   const [dayError, setDayError] = useState(null);
 
   const selectedDateLabel = useMemo(
-    () => formatHeaderDate(dateParam),
-    [dateParam]
+    () => formatHeaderDate(selectedDate),
+    [selectedDate]
   );
 
   useEffect(() => {
@@ -150,23 +182,29 @@ export default function PhysicalDateEventsPage() {
     if (datesLoading) return;
     if (!dates.length) return;
     if (datesError) return;
-    if (!dateParam) {
-      navigate(`/tcg-fisico/eventos/data/${dates[0]}`, { replace: true });
+    if (!selectedDate) {
+      navigate(
+        `/tcg-fisico/eventos/data/${encodeURIComponent(dates[0])}`,
+        { replace: true }
+      );
       return;
     }
-    if (!dates.includes(dateParam)) {
-      navigate(`/tcg-fisico/eventos/data/${dates[0]}`, { replace: true });
+    if (!dates.includes(selectedDate)) {
+      navigate(
+        `/tcg-fisico/eventos/data/${encodeURIComponent(dates[0])}`,
+        { replace: true }
+      );
     }
-  }, [dateParam, dates, datesError, datesLoading, navigate]);
+  }, [dates, datesError, datesLoading, navigate, selectedDate]);
 
   useEffect(() => {
-    if (!dateParam) {
+    if (!selectedDate) {
       setDayData(null);
       setDayLoading(false);
       setDayError(null);
       return;
     }
-    if (dates.length && !dates.includes(dateParam)) {
+    if (dates.length && !dates.includes(selectedDate)) {
       setDayLoading(false);
       return;
     }
@@ -174,7 +212,7 @@ export default function PhysicalDateEventsPage() {
     const loadDay = async () => {
       setDayLoading(true);
       setDayError(null);
-      const { data, error } = await getPhysicalDay(dateParam);
+      const { data, error } = await getPhysicalDay(selectedDate);
       if (!isActive) return;
       if (error) {
         setDayData(null);
@@ -188,13 +226,13 @@ export default function PhysicalDateEventsPage() {
     return () => {
       isActive = false;
     };
-  }, [dateParam, dates]);
+  }, [selectedDate, dates]);
 
   const handleSelectChange = useCallback(
     (event) => {
       const value = event.target.value;
       if (!value) return;
-      navigate(`/tcg-fisico/eventos/data/${value}`);
+      navigate(`/tcg-fisico/eventos/data/${encodeURIComponent(value)}`);
     },
     [navigate]
   );
@@ -237,19 +275,19 @@ export default function PhysicalDateEventsPage() {
             </label>
             <select
               id="physical-date-select"
-              value={dateParam ?? ""}
+              value={selectedDate ?? ""}
               onChange={handleSelectChange}
               disabled={datesLoading || !dates.length}
               className="w-full bg-zinc-900/80 border border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
             >
-              {(!dateParam || !dates.includes(dateParam)) && (
+              {(!selectedDate || !dates.includes(selectedDate)) && (
                 <option value="" disabled>
                   {datesLoading ? "Carregando datas..." : "Selecione uma data"}
                 </option>
               )}
-              {dateParam && !dates.includes(dateParam) && (
-                <option value={dateParam} disabled>
-                  {formatOptionDate(dateParam)}
+              {selectedDate && !dates.includes(selectedDate) && (
+                <option value={selectedDate} disabled>
+                  {formatOptionDate(selectedDate)}
                 </option>
               )}
               {dates.map((date) => (
@@ -295,7 +333,7 @@ export default function PhysicalDateEventsPage() {
 
           {!dayLoading && !dayError && events.length === 0 && (
             <div className="px-4 sm:px-6 py-10 text-center text-zinc-400">
-              Nenhum evento encontrado para <span className="font-medium text-zinc-200">{dateParam}</span>.
+              Nenhum evento encontrado para <span className="font-medium text-zinc-200">{selectedDate || "—"}</span>.
             </div>
           )}
 

@@ -35,7 +35,7 @@ const routes = [
         children: [
           { index: true, element: <EventPhysicalSummaryPage /> },
           { path: "loja/*", element: <PhysicalStoreEventsPage /> },
-          { path: "data/:dateParam?", element: <PhysicalDateEventsPage /> },
+          { path: "data/:date?", element: <PhysicalDateEventsPage /> },
           { path: ":eventId", element: <EventPhysicalSummaryPage /> },
         ],
       },

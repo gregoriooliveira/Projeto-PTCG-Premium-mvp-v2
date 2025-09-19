@@ -734,7 +734,20 @@ const AllPhysicalEntriesPagedWidget = ({ manualMatches }) => {
   const slice = rows.slice((page - 1) * PAGE_SIZE, (page - 1) * PAGE_SIZE + PAGE_SIZE);
 
   return (
-    <WidgetCard title="Todos os registros (Físico)" icon={Users} iconClass="text-purple-400" className="col-span-12">
+    <WidgetCard
+      title={
+        <a
+          href="#/tcg-fisico/eventos/data"
+          className="no-underline font-semibold text-zinc-100 hover:underline"
+          aria-label="Abrir eventos por data"
+        >
+          Todos os registros (Físico)
+        </a>
+      }
+      icon={Users}
+      iconClass="text-purple-400"
+      className="col-span-12"
+    >
       <div className="grid grid-cols-12 text-[11px] uppercase tracking-wider text-zinc-400 mb-2">
         <div className="col-span-3">Data</div>
         <div className="col-span-3 text-center">Tipo de Evento</div>
