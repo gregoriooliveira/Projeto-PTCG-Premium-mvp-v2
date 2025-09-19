@@ -279,17 +279,35 @@ const db = {
 };
 
 const recomputeAllForEvent = vi.fn(async () => {});
+const recomputeTournament = vi.fn(async () => {});
 const authMiddleware = vi.fn((req, res, next) => next());
 
 vi.mock("../firestore.js", () => ({ db }));
-vi.mock("./aggregates.js", () => ({ recomputeAllForEvent }));
+vi.mock("./aggregates.js", () => ({ recomputeAllForEvent, recomputeTournament }));
 vi.mock("../middleware/auth.js", () => ({ authMiddleware }));
 
 const { default: router } = await import("./routes.js");
 
+function getPostHandler() {
+  const layer = router.stack.find(
+    (l) => l.route && l.route.path === "/events" && l.route.methods.post,
+  );
+  return layer.route.stack[1].handle;
+}
+
 function getPatchHandler() {
   const layer = router.stack.find(
     (l) => l.route && l.route.path === "/events/:id" && l.route.methods.patch,
+  );
+  return layer.route.stack[1].handle;
+}
+
+function getBackfillHandler() {
+  const layer = router.stack.find(
+    (l) =>
+      l.route &&
+      l.route.path === "/events/maintenance/backfill-tournaments" &&
+      l.route.methods.post,
   );
   return layer.route.stack[1].handle;
 }
@@ -341,6 +359,40 @@ function createRes() {
   };
 }
 
+describe("physical routes POST /events", () => {
+  beforeEach(() => {
+    eventsStore = {};
+    roundsStore = {};
+    rawLogsStore = {};
+    recomputeAllForEvent.mockClear();
+    recomputeTournament.mockClear();
+  });
+
+  it("derives tournament metadata for recognized tournament types", async () => {
+    const handler = getPostHandler();
+    const req = {
+      body: {
+        eventId: "evt1",
+        nome: "Regional São Paulo",
+        tipo: "Regional",
+        dia: "2024-03-02",
+      },
+    };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(201);
+    expect(eventsStore.evt1.tourneyName).toBe("Regional São Paulo");
+    expect(eventsStore.evt1.tournamentId).toBe("manual:regional-sao-paulo:2024-03-02");
+    expect(recomputeAllForEvent).toHaveBeenCalledOnce();
+    const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
+    expect(prevArg).toBeNull();
+    expect(nextArg.tourneyName).toBe("Regional São Paulo");
+    expect(nextArg.tournamentId).toBe("manual:regional-sao-paulo:2024-03-02");
+  });
+});
+
 describe("physical routes PATCH /events/:id", () => {
   beforeEach(() => {
     eventsStore = {
@@ -364,6 +416,7 @@ describe("physical routes PATCH /events/:id", () => {
     roundsStore = {};
     rawLogsStore = {};
     recomputeAllForEvent.mockClear();
+    recomputeTournament.mockClear();
   });
 
   it("normalizes metadata fields and returns updated document", async () => {
@@ -446,6 +499,79 @@ describe("physical routes PATCH /events/:id", () => {
     expect(prevArg).toMatchObject(original);
     expect(nextArg).toEqual(res.body);
   });
+
+  it("updates tournament metadata when a recognized event name changes", async () => {
+    eventsStore.evt1 = {
+      eventId: "evt1",
+      name: "Regional São Paulo",
+      type: "Regional",
+      date: "2024-03-02",
+      tourneyName: "Regional São Paulo",
+      tournamentId: "manual:regional-sao-paulo:2024-03-02",
+    };
+    const handler = getPatchHandler();
+    const req = { params: { id: "evt1" }, body: { name: "Regional Porto Alegre" } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(eventsStore.evt1.tourneyName).toBe("Regional Porto Alegre");
+    expect(eventsStore.evt1.tournamentId).toBe("manual:regional-porto-alegre:2024-03-02");
+    expect(res.body.tourneyName).toBe("Regional Porto Alegre");
+    expect(res.body.tournamentId).toBe("manual:regional-porto-alegre:2024-03-02");
+    expect(recomputeAllForEvent).toHaveBeenCalledOnce();
+    const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
+    expect(prevArg.tournamentId).toBe("manual:regional-sao-paulo:2024-03-02");
+    expect(nextArg.tournamentId).toBe("manual:regional-porto-alegre:2024-03-02");
+  });
+
+  it("clears derived tournament metadata when the type is no longer a tournament", async () => {
+    eventsStore.evt1 = {
+      eventId: "evt1",
+      name: "Regional São Paulo",
+      type: "Regional",
+      date: "2024-03-02",
+      tourneyName: "Regional São Paulo",
+      tournamentId: "manual:regional-sao-paulo:2024-03-02",
+    };
+    const handler = getPatchHandler();
+    const req = { params: { id: "evt1" }, body: { type: "Liga Local" } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(eventsStore.evt1.type).toBe("Liga Local");
+    expect(eventsStore.evt1.tourneyName).toBeNull();
+    expect(eventsStore.evt1.tournamentId).toBeNull();
+    expect(res.body.tourneyName).toBeNull();
+    expect(res.body.tournamentId).toBeNull();
+    expect(recomputeAllForEvent).toHaveBeenCalledOnce();
+  });
+
+  it("preserves custom tournament names while recomputing the identifier", async () => {
+    eventsStore.evt1 = {
+      eventId: "evt1",
+      name: "Regional São Paulo",
+      type: "Regional",
+      date: "2024-03-02",
+      tourneyName: "Meu Torneio", // custom name
+      tournamentId: "manual:meu-torneio:2024-03-02",
+    };
+    const handler = getPatchHandler();
+    const req = { params: { id: "evt1" }, body: { date: "2024-03-03" } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(eventsStore.evt1.date).toBe("2024-03-03");
+    expect(eventsStore.evt1.tourneyName).toBe("Meu Torneio");
+    expect(eventsStore.evt1.tournamentId).toBe("manual:meu-torneio:2024-03-03");
+    expect(res.body.tournamentId).toBe("manual:meu-torneio:2024-03-03");
+    expect(recomputeAllForEvent).toHaveBeenCalledOnce();
+    const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
+    expect(prevArg.tournamentId).toBe("manual:meu-torneio:2024-03-02");
+    expect(nextArg.tournamentId).toBe("manual:meu-torneio:2024-03-03");
+  });
 });
 
 describe("physical routes PATCH /events/:eventId/rounds/:roundId", () => {
@@ -513,6 +639,48 @@ describe("physical routes PATCH /events/:eventId/rounds/:roundId", () => {
     });
     expect(eventsStore.evt1.stats.counts).toEqual({ W: 0, L: 0, T: 1 });
     expect(recomputeAllForEvent).toHaveBeenCalledOnce();
+  });
+});
+
+describe("physical routes POST /events/maintenance/backfill-tournaments", () => {
+  beforeEach(() => {
+    eventsStore = {
+      evt1: {
+        eventId: "evt1",
+        name: "Regional Curitiba",
+        type: "Regional",
+        date: "2024-05-05",
+      },
+    };
+    roundsStore = {};
+    rawLogsStore = {};
+    recomputeAllForEvent.mockClear();
+    recomputeTournament.mockClear();
+  });
+
+  it("fills missing tournament metadata and recomputes aggregates", async () => {
+    const handler = getBackfillHandler();
+    const req = { body: {} };
+    const res = createRes();
+
+    await handler(req, res);
+
+    const expectedId = "manual:regional-curitiba:2024-05-05";
+    expect(eventsStore.evt1.tourneyName).toBe("Regional Curitiba");
+    expect(eventsStore.evt1.tournamentId).toBe(expectedId);
+    expect(res.body).toEqual({
+      ok: true,
+      processed: 1,
+      updated: 1,
+      tournaments: [expectedId],
+    });
+    expect(recomputeAllForEvent).toHaveBeenCalledOnce();
+    const [prevArg, nextArg] = recomputeAllForEvent.mock.calls[0];
+    expect(prevArg.eventId).toBe("evt1");
+    expect(prevArg.tournamentId).toBeUndefined();
+    expect(nextArg.tournamentId).toBe(expectedId);
+    expect(recomputeTournament).toHaveBeenCalledTimes(1);
+    expect(recomputeTournament).toHaveBeenCalledWith(expectedId);
   });
 });
 
