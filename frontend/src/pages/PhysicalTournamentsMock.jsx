@@ -165,6 +165,15 @@ const normalizeCounts = (payload) => {
   return { W, L, T };
 };
 
+const pickFirstString = (...values) => {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+};
+
 const computeWr = (counts) => {
   const { W = 0, L = 0, T = 0 } = counts || {};
   const total = W + L + T;
@@ -177,7 +186,28 @@ const normalizeTournament = (entry) => {
   const rawDate = entry.dateISO || entry.date || entry.day || "";
   const dateISO = rawDate ? String(rawDate).slice(0, 10) : "";
   const name = entry.name || entry.title || entry.tournament || entry.event || "";
-  const format = entry.format || entry.eventType || entry.type || entry.category || "";
+  const format =
+    pickFirstString(entry.format, entry.category, entry.formato, entry.gameFormat) || "";
+  const eventTypeRaw =
+    pickFirstString(
+      entry.eventType,
+      entry.event_type,
+      entry.type,
+      entry.tipo,
+      entry.tournamentType,
+      entry.tournament_type,
+      entry.category,
+      entry.eventTypeKey,
+    ) || "";
+  const eventTypeKey =
+    normalizeTypeFilter(entry.eventTypeKey) ||
+    normalizeTypeFilter(eventTypeRaw) ||
+    normalizeTypeFilter(entry.type) ||
+    normalizeTypeFilter(entry.tipo) ||
+    normalizeTypeFilter(entry.category) ||
+    normalizeTypeFilter(entry.format);
+  const eventTypeLabel = eventTypeKey ? getTypeLabel(eventTypeKey) : "";
+  const eventType = eventTypeRaw || eventTypeLabel || "";
   const deck = entry.deck || entry.deckName || entry.playerDeck || entry.playerDeckName || entry.deckKey || entry.deckSlug || "";
   const pokemonHints = entry.pokemonHints || entry.pokemons || entry.pokemon || entry.deckPokemons || null;
   const idCandidates = [
@@ -198,7 +228,10 @@ const normalizeTournament = (entry) => {
     tournamentId: idCandidates[0] || "",
     dateISO,
     name: name || "—",
-    format: format || "—",
+    format: format || "",
+    eventType: eventType || "",
+    eventTypeKey: eventTypeKey || null,
+    eventTypeLabel: eventTypeLabel || "",
     deck,
     pokemonHints,
     counts,
@@ -494,8 +527,13 @@ export default function TournamentsLivePage() {
     let arr = [...rows];
     if (typeFilter) {
       arr = arr.filter((t) => {
-        const rawType = t?.format || t?.eventType || t?.type;
-        return normalizeTypeFilter(rawType) === typeFilter;
+        if (t?.eventTypeKey) return t.eventTypeKey === typeFilter;
+        const candidates = [t?.eventType, t?.format];
+        for (const candidate of candidates) {
+          const normalized = normalizeTypeFilter(candidate);
+          if (normalized) return normalized === typeFilter;
+        }
+        return false;
       });
     }
     if (status !== "todos") { arr = arr.filter(() => true); }
@@ -626,7 +664,14 @@ export default function TournamentsLivePage() {
                 const wr = Number.isFinite(t.wr) ? t.wr : WR(counts.W, counts.L, counts.T);
                 const dateISO = t.dateISO || "";
                 const name = t.name || "—";
-                const format = t.format || "—";
+                const eventTypeLabel = t.eventTypeLabel || (t.eventTypeKey ? getTypeLabel(t.eventTypeKey) : "");
+                const eventTypeRaw = t.eventType || "";
+                const typeDisplay = eventTypeLabel || eventTypeRaw;
+                const formatValue = t.format || "";
+                const format =
+                  typeDisplay && formatValue && formatValue !== typeDisplay
+                    ? `${typeDisplay} • ${formatValue}`
+                    : typeDisplay || formatValue || "—";
                 const deckLabel = prettyDeckKey(t.deck || "") || "—";
                 const tournamentId = t.tournamentId || t.id || "";
                 const rowKey = tournamentId || `${name}-${dateISO}-${i}`;

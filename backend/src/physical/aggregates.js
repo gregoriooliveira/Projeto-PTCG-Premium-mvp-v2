@@ -1,6 +1,7 @@
 import { db } from "../firestore.js";
 import { normalizeName } from "../utils/normalize.js";
 import { countsAdd, countsOfResult, wrPercent } from "../utils/wr.js";
+import { normalizeTournamentTypeFilter } from "./tournamentTypes.js";
 
 function normalizeCounts(source) {
   if (!source || typeof source !== "object") return null;
@@ -104,6 +105,15 @@ function pickTournamentReference(current, candidate) {
   return current;
 }
 
+function pickFirstString(...values) {
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return null;
+}
+
 function extractTournamentMeta(ev = {}) {
   const name =
     (typeof ev.tourneyName === "string" && ev.tourneyName) ||
@@ -115,6 +125,38 @@ function extractTournamentMeta(ev = {}) {
     (typeof ev.date === "string" && ev.date) ||
     null;
   const format = typeof ev.format === "string" && ev.format ? ev.format : null;
+  const eventType =
+    pickFirstString(
+      ev.eventType,
+      ev.event_type,
+      ev.type,
+      ev.tipo,
+      ev.tournamentType,
+      ev.tournament_type,
+      ev.category,
+    ) ||
+    (typeof ev.eventTypeKey === "string" && ev.eventTypeKey.trim() ? ev.eventTypeKey.trim() : null);
+  let eventTypeKey = null;
+  const typeKeyCandidates = [
+    ev.eventTypeKey,
+    ev.event_type_key,
+    eventType,
+    ev.eventType,
+    ev.event_type,
+    ev.type,
+    ev.tipo,
+    ev.tournamentType,
+    ev.tournament_type,
+    ev.category,
+    ev.format,
+  ];
+  for (const candidate of typeKeyCandidates) {
+    const normalized = normalizeTournamentTypeFilter(candidate);
+    if (normalized) {
+      eventTypeKey = normalized;
+      break;
+    }
+  }
   const deckKey =
     (typeof ev.playerDeckKey === "string" && ev.playerDeckKey) ||
     (typeof ev.deckKey === "string" && ev.deckKey) ||
@@ -127,7 +169,16 @@ function extractTournamentMeta(ev = {}) {
     null;
   const rounds = Number(ev.roundsCount);
   const roundsCount = Number.isFinite(rounds) ? rounds : null;
-  return { name, dateISO, format, deck: deckKey, deckName, roundsCount };
+  return {
+    name,
+    dateISO,
+    format,
+    eventType,
+    eventTypeKey,
+    deck: deckKey,
+    deckName,
+    roundsCount,
+  };
 }
 
 /** Garante ID seguro para usar em doc() */
@@ -522,6 +573,8 @@ export async function recomputeTournament(tournamentId) {
       name: meta.name,
       dateISO: meta.dateISO,
       format: meta.format,
+      ...(meta.eventType ? { eventType: meta.eventType } : {}),
+      ...(meta.eventTypeKey ? { eventTypeKey: meta.eventTypeKey } : {}),
       deck: meta.deck,
       deckName: meta.deckName,
       roundsCount: meta.roundsCount,
