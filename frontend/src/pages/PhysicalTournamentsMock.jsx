@@ -342,7 +342,7 @@ export default function TournamentsLivePage() {
         window.location.hash = nextHash;
       }
     } catch {}
-  }, [syncHash]);
+  }, []);
 
   const runSearch = useCallback(async (searchParams = {}) => {
     try {
