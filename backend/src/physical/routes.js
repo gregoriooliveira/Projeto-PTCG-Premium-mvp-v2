@@ -5,6 +5,7 @@ import { normalizeDeckKey, normalizeName } from "../utils/normalize.js";
 import { wrPercent, countsAdd, countsOfResult } from "../utils/wr.js";
 import { dateKeyFromTs, timestampFromDateKey } from "../utils/tz.js";
 import { recomputeAllForEvent, recomputeTournament } from "./aggregates.js";
+import { normalizeTournamentTypeFilter } from "./tournamentTypes.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const r = Router();
@@ -63,59 +64,6 @@ const TOURNAMENT_TYPE_KEYWORDS = [
   "internacional",
   "mundial",
 ];
-
-const TOURNAMENT_TYPE_FILTER_OPTIONS = [
-  {
-    value: "regional",
-    keywords: ["regional", "regional championship", "regional championships"],
-  },
-  {
-    value: "special",
-    keywords: ["special", "special event", "special events"],
-  },
-  {
-    value: "international",
-    keywords: [
-      "international",
-      "international championship",
-      "international championships",
-      "internacional",
-      "internacional championship",
-      "internacional championships",
-    ],
-  },
-  {
-    value: "worlds",
-    keywords: [
-      "worlds",
-      "world championship",
-      "world championships",
-      "mundial",
-      "campeonato mundial",
-    ],
-  },
-];
-
-function normalizeAscii(value) {
-  if (typeof value !== "string") return "";
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function normalizeTournamentTypeFilter(value) {
-  const ascii = normalizeAscii(value);
-  if (!ascii) return null;
-  for (const option of TOURNAMENT_TYPE_FILTER_OPTIONS) {
-    const match = option.keywords.some(
-      (keyword) => ascii === keyword || ascii.includes(keyword),
-    );
-    if (match) return option.value;
-  }
-  return null;
-}
 
 function trimNullable(value) {
   if (value == null) return null;
@@ -1172,8 +1120,15 @@ r.get("/tournaments", async (req, res) => {
   }
   if (typeFilter) {
     arr = arr.filter((t) => {
-      const candidate = t?.format || t?.eventType || t?.type;
-      return normalizeTournamentTypeFilter(candidate) === typeFilter;
+      if (typeof t?.eventTypeKey === "string" && t.eventTypeKey) {
+        return normalizeTournamentTypeFilter(t.eventTypeKey) === typeFilter;
+      }
+      const candidates = [t?.eventType, t?.type, t?.format];
+      for (const candidate of candidates) {
+        const normalized = normalizeTournamentTypeFilter(candidate);
+        if (normalized) return normalized === typeFilter;
+      }
+      return false;
     });
   }
   // Sort by date desc
