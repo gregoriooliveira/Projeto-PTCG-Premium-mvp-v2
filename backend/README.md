@@ -135,19 +135,25 @@ POST /api/physical/events
 Content-Type: application/json
 
 {
-  "dia": "2024-05-01",
-  "nome": "League Challenge",
-  "tipo": "LC",
-  "local": "Loja XPTO",
-  "formato": "Standard",
-  "classificacao": "League Challenge",
+  "dia": "2024-05-01",                     // opcional — aceita `DD/MM/YYYY`, `YYYY-MM-DD` ou data parseável
+  "nome": "League Challenge",              // opcional — nome "bruto" do evento informado pelo usuário
+  "tipo": "LC",                            // opcional — utilizado para detectar torneios
+  "local": "Loja XPTO",                    // opcional — cidade ou loja
+  "formato": "Standard",                   // opcional
+  "classificacao": "League Challenge",     // opcional — ex.: League Challenge, Regional etc.
   "you": "Ash",
   "opponent": "Gary",
   "deckName": "Chien-Pao/Baxcalibur",
   "opponentDeck": "Miraidon",
-  "result": "W",
-  "round": 1,
-  "pokemons": ["chien-pao-ex", "baxcalibur"]
+  "result": "W",                           // opcional — `W`, `L`, `T`...
+  "round": 1,                               // opcional
+  "placement": 3,                           // opcional — posição final no torneio
+  "pokemons": ["chien-pao-ex", "baxcalibur"], // opcional — até 2 slugs
+  "isOnlineTourney": false,                // opcional — flag para eventos online
+  "limitlessId": "lc-2024-xyz",           // opcional — ID do Limitless (sem prefixo)
+  "tourneyName": "League Challenge XPTO", // opcional — força o nome derivado do torneio
+  "rawLog": "Round 1 vs Gary...",          // opcional — log bruto associado
+  "lang": "pt"                             // opcional — padrão `pt`
 }
 ```
 
@@ -160,21 +166,34 @@ Resposta: `201 { "eventId": "abc123" }`.
 ```json
 {
   "eventId": "abc123",
+  "source": "physical",
+  "createdAt": 1714526400000,
   "date": "2024-05-01",
-  "name": "League Challenge",
-  "type": "LC",
-  "storeOrCity": "Loja XPTO",
-  "format": "Standard",
-  "classification": "League Challenge",
   "you": "Ash",
   "opponent": "Gary",
   "deckName": "Chien-Pao/Baxcalibur",
   "opponentDeck": "Miraidon",
+  "playerDeckKey": "chien-pao-baxcalibur",
+  "opponentDeckKey": "miraidon",
   "result": "W",
   "round": 1,
-  "pokemons": ["chien-pao-ex", "baxcalibur"]
+  "placement": 3,
+  "pokemons": ["chien-pao-ex", "baxcalibur"],
+  "isOnlineTourney": false,
+  "limitlessId": "lc-2024-xyz",
+  "tourneyName": "League Challenge XPTO",
+  "tournamentId": "limitless:lc-2024-xyz",
+  "rawLog": "Round 1 vs Gary...",
+  "lang": "pt",
+  "name": "League Challenge",
+  "type": "LC",
+  "storeOrCity": "Loja XPTO",
+  "format": "Standard",
+  "classification": "League Challenge"
 }
 ```
+
+Campos derivados: quando `limitlessId` é informado, o backend gera automaticamente `tournamentId` com o prefixo `limitless:` e preserva `tourneyName` apenas se enviado manualmente. Caso contrário, ele tenta inferir `tourneyName` e `tournamentId` a partir de `tipo`, `nome` e `dia` (criando um slug normalizado) sempre que o evento é reconhecido como torneio presencial.
 
 ### Pokédex e persistência de Pokémon
 
