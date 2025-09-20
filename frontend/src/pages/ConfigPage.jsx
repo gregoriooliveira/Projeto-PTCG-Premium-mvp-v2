@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { deleteAccount, getProfile, updateProfile } from "../services/profile.js";
-import { useAuth } from "../contexts/AuthContext.jsx";
+import { useAuth } from "../auth/AuthProvider.jsx";
 
 const applyThemeClass = (theme) => {
   if (typeof document === "undefined") return;

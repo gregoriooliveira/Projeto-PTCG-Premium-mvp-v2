@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { describe, expect, vi, beforeEach, afterEach, it } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import ConfigPage from "./ConfigPage.jsx";
-import { AuthProvider } from "../contexts/AuthContext.jsx";
+import { AuthProvider } from "../auth/AuthProvider.jsx";
 
 const mockNavigate = vi.fn();
 
