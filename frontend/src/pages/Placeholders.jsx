@@ -21,6 +21,3 @@ export function RegistroPage() {
   return <div className="p-6 text-zinc-200">📄 Placeholder Registro: {id}</div>;
 }
 
-export function ConfigPage() {
-  return <div className="p-6 text-zinc-200">Configurações - em breve.</div>;
-}

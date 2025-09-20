@@ -11,7 +11,8 @@ import PhysicalTournamentsMock from "./pages/PhysicalTournamentsMock.jsx";
 import TournamentsLivePage from "./pages/TournamentsLivePage.jsx";
 import PhysicalPageV2 from "./PhysicalPageV2.jsx";
 import EventPhysicalSummaryPage from "./EventPhysicalSummaryPage.jsx";
-import { DayPage, DeckPage, OpponentPage, RegistroPage, ConfigPage } from "./pages/Placeholders.jsx";
+import { DayPage, DeckPage, OpponentPage, RegistroPage } from "./pages/Placeholders.jsx";
+import ConfigPage from "./pages/ConfigPage.jsx";
 
 const routes = [
   { path: "/", element: <HomePage /> },
