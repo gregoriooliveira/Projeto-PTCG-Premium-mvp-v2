@@ -67,10 +67,19 @@ export const deletePhysicalRound = async (eventId, roundId) => {
   );
 };
 
-export const listPhysicalTournaments = async (query = "") => {
-  const params = new URLSearchParams();
-  if (query) params.set("query", query);
-  const search = params.toString();
+export const listPhysicalTournaments = async (params = {}) => {
+  let query = "";
+  let type = "";
+  if (typeof params === "string") {
+    query = params;
+  } else if (params && typeof params === "object") {
+    if (params.query) query = params.query;
+    if (params.type) type = params.type;
+  }
+  const usp = new URLSearchParams();
+  if (query) usp.set("query", query);
+  if (type) usp.set("type", type);
+  const search = usp.toString();
   const suffix = search ? `?${search}` : "";
   return api(`/api/physical/tournaments${suffix}`);
 };
