@@ -166,7 +166,11 @@ async function sourceSummary(prefix, limitDays){
         pokemons,
       };
     })
-    .sort((a, b) => b.wr - a.wr)
+    .sort((a, b) => {
+      const wrDiff = b.wr - a.wr;
+      if (wrDiff !== 0) return wrDiff;
+      return total(b.counts) - total(a.counts);
+    })
     .slice(0, 5);
   // opponents
   const oppSnap = await db.collection(`${prefix}OpponentsAgg`).get();
@@ -285,7 +289,14 @@ function mergeHome(a, b, limitDays){
     if ((!Array.isArray(prev.pokemons) || prev.pokemons.length===0) && (x.pokemons||[]).length) prev.pokemons = x.pokemons;
     dm.set(x.deckKey, prev);
   }
-  const topDecks = Array.from(dm.values()).map(d => ({ deckKey:d.deckKey, counts:d.counts, wr: wrPercent(d.counts), avatars:d.avatars||[], pokemons:d.pokemons||[] })).sort((a,b)=>b.wr-a.wr).slice(0,5);
+  const topDecks = Array.from(dm.values())
+    .map(d => ({ deckKey:d.deckKey, counts:d.counts, wr: wrPercent(d.counts), avatars:d.avatars||[], pokemons:d.pokemons||[] }))
+    .sort((a,b)=>{
+      const wrDiff = b.wr - a.wr;
+      if (wrDiff !== 0) return wrDiff;
+      return total(b.counts) - total(a.counts);
+    })
+    .slice(0,5);
 
   // topOpponents (merge by opponentName)
   const om = new Map();
