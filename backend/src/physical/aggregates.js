@@ -543,6 +543,7 @@ export async function recomputeTournament(tournamentId) {
 
   let totalCounts = { W: 0, L: 0, T: 0 };
   let referenceEvent = null;
+  let fallbackTournamentMeta = null;
   let aggregatedPokemonHints = [];
   snap.forEach(d => {
     const ev = d.data();
@@ -551,6 +552,12 @@ export async function recomputeTournament(tournamentId) {
     add(deckKey, counts);
     totalCounts = countsAdd(totalCounts, counts);
     referenceEvent = pickTournamentReference(referenceEvent, ev);
+    if (!fallbackTournamentMeta) {
+      const candidateMeta = extractTournamentMeta(ev);
+      if (candidateMeta.eventTypeKey) {
+        fallbackTournamentMeta = candidateMeta;
+      }
+    }
     const hints = extractPokemonHintsFromEvent(ev);
     if (hints.length) {
       aggregatedPokemonHints = mergePokemonHints(aggregatedPokemonHints, hints);
@@ -562,7 +569,21 @@ export async function recomputeTournament(tournamentId) {
     decks.push({ deckKey, counts: {W:c.W, L:c.L, T:c.T}, games: c.games, wr: wrPercent(c) });
   }
 
-  const meta = extractTournamentMeta(referenceEvent || {});
+  const referenceMeta = extractTournamentMeta(referenceEvent || {});
+  const fallbackMeta = fallbackTournamentMeta || {};
+  const meta = {
+    ...referenceMeta,
+    ...(referenceMeta.eventType
+      ? {}
+      : fallbackMeta.eventType
+        ? { eventType: fallbackMeta.eventType }
+        : {}),
+    ...(referenceMeta.eventTypeKey
+      ? {}
+      : fallbackMeta.eventTypeKey
+        ? { eventTypeKey: fallbackMeta.eventTypeKey }
+        : {}),
+  };
   const wr = wrPercent(totalCounts);
   const referencePokemonHints = extractPokemonHintsFromEvent(referenceEvent || {});
   const pokemonHints = referencePokemonHints.length ? referencePokemonHints : aggregatedPokemonHints;
