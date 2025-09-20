@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { getPhysicalDay, listPhysicalDays } from "../services/physicalApi.js";
+import BackButton from "../components/BackButton.jsx";
 
 const TypeBadge = ({ type }) => {
   const normalized = typeof type === "string" ? type.toLowerCase() : "";
@@ -248,13 +249,7 @@ export default function PhysicalDateEventsPage() {
     <div className="p-4 sm:p-6 max-w-6xl mx-auto text-zinc-100">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/tcg-fisico")}
-            className="rounded-xl px-3 py-1.5 bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700 transition"
-          >
-            ← Voltar
-          </button>
+          <BackButton href="#/tcg-fisico" label="Voltar ao TCG Físico" />
           <div className="text-sm text-zinc-400">Datas · Físico</div>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-4">
