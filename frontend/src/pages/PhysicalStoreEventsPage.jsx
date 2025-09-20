@@ -1,12 +1,13 @@
 // src/pages/PhysicalStoreEventsPage.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import ptBR from "date-fns/locale/pt-BR";
 
 import { getEvent } from "../eventsRepo.js";
 import { getPhysicalLogs } from "../services/api.js";
 import { getPhysicalRounds } from "../services/physicalApi.js";
+import BackButton from "../components/BackButton.jsx";
 import DeckLabel from "../components/DeckLabel.jsx";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import { selectStoreFocusedMatches, STORE_FOCUSED_EVENT_TYPES } from "../PhysicalPageV2.jsx";
@@ -1282,9 +1283,9 @@ export default function PhysicalStoreEventsPage() {
       <div className="max-w-7xl mx-auto px-6 pt-10 pb-4">
         <h1 className="text-3xl font-bold">Eventos por Loja</h1>
         <p className="text-zinc-400 mt-2">CLP, CUP, Challenge e Liga Local</p>
-        <a href="#/tcg-fisico/torneios" className="inline-flex items-center gap-2 text-zinc-300 hover:text-white mt-3">
-          <ChevronLeft size={18} /> Voltar
-        </a>
+        <div className="mt-3">
+          <BackButton href="#/tcg-fisico" label="Voltar ao TCG Físico" />
+        </div>
       </div>
 
       {/* CONTROLS */}
