@@ -664,9 +664,17 @@ export const selectStoreFocusedMatches = (manualMatches = []) =>
     });
 
 const LocalLeagueWidget = ({ manualMatches }) => {
-  const rows = useMemo(() => selectStoreFocusedMatches(manualMatches)
-    .sort((a,b) => (b?.date || 0) - (a?.date || 0))
-    .slice(0,5), [manualMatches]);
+  const rows = useMemo(
+    () =>
+      selectStoreFocusedMatches(manualMatches)
+        .filter((match) => {
+          const eventTypeKey = normalizeStoreEventType(match?.eventType ?? match?.type);
+          return eventTypeKey === "local" || eventTypeKey === "challenge";
+        })
+        .sort((a, b) => (b?.date || 0) - (a?.date || 0))
+        .slice(0, 5),
+    [manualMatches],
+  );
 
   return (
     <WidgetCard title={<a href="#/tcg-fisico/eventos/loja" className="underline decoration-dotted hover:opacity-90">Liga Local</a>} iconClass="text-sky-400" icon={CalendarDays} className="col-span-12 md:col-span-6">
@@ -793,14 +801,74 @@ const AllPhysicalEntriesPagedWidget = ({ manualMatches }) => {
 const _DECKS = ["Gardevoir ex","Dragapult ex","Grimmsnarl ex","Raging Bolt ex","Mewtwo Rocket","Gholdengo","Tera Box","Joltik Box","Eevee Box"];
 const _pick = (arr) => arr[Math.floor(Math.random()*arr.length)];
 const _datePast = (days=30) => { const d=new Date(); d.setDate(d.getDate()-Math.floor(Math.random()*days)); d.setHours(Math.floor(Math.random()*24), Math.floor(Math.random()*60),0,0); return d.getTime(); };
-function mockManualMatches(n=48){
+function mockManualMatches(n = 48) {
+  const kinds = ["local", "cup", "challenge", "regional", "special", "international", "worlds"];
+  const stores = [
+    "Dragon Den TCG",
+    "Arena Geek",
+    "PokeCenter BR",
+    "Loja do Mestre",
+    "CardHouse SP",
+    "Mana Nexus",
+    "Hex & Crit",
+    "Guilda do Norte",
+    "PokeLab Rio",
+    "D20 Campinas",
+  ];
 
-  const kinds=['local','cup','challenge','regional','special','international','worlds'];
-  const stores=["Dragon Den TCG","Arena Geek","PokeCenter BR","Loja do Mestre","CardHouse SP","Mana Nexus","Hex & Crit","Guilda do Norte","PokeLab Rio","D20 Campinas"];
-  const out=[]; for(let i=0;i<n;i++){
-    const k=_pick(kinds); const store=_pick(stores);
-    out.push({ id:`mm_${i}`, date:_datePast(25), result: Math.random()<0.56?'W':(Math.random()<0.12?'T':'L'), eventType:k, playerDeck:_pick(_DECKS), storeName:store, storeUrl:`#/loja/${store.toLowerCase().replace(/\s+/g,'-')}`, detailUrl:`#/registro/mm_${i}` });
+  const toStoreUrl = (store) => (store ? `#/loja/${store.toLowerCase().replace(/\s+/g, "-")}` : "#");
+  const seededNow = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const seededStoreEvents = [
+    { id: "seed_local_0", eventType: "local", storeName: "Dragon Den TCG", daysAgo: 0, result: "W" },
+    { id: "seed_challenge_1", eventType: "challenge", storeName: "Arena Geek", daysAgo: 1, result: "L" },
+    { id: "seed_local_2", eventType: "local", storeName: "PokeCenter BR", daysAgo: 2, result: "T" },
+    { id: "seed_challenge_3", eventType: "challenge", storeName: "Loja do Mestre", daysAgo: 3, result: "W" },
+    { id: "seed_local_4", eventType: "local", storeName: "CardHouse SP", daysAgo: 4, result: "W" },
+    { id: "seed_challenge_5", eventType: "challenge", storeName: "Mana Nexus", daysAgo: 5, result: "L" },
+    { id: "seed_cup_recent", eventType: "cup", storeName: "Hex & Crit", daysAgo: 0, result: "W", offsetMs: 3 * 60 * 60 * 1000 },
+  ];
+
+  const out = [];
+
+  for (let i = 0; i < seededStoreEvents.length && out.length < n; i += 1) {
+    const seed = seededStoreEvents[i];
+    const store = seed.storeName || stores[i % stores.length];
+    const offset = typeof seed.offsetMs === "number" ? seed.offsetMs : i * 1000;
+    const id = seed.id || `seed_${i}`;
+    out.push({
+      id,
+      date: seededNow - seed.daysAgo * dayMs + offset,
+      result: seed.result,
+      eventType: seed.eventType,
+      playerDeck: _pick(_DECKS),
+      storeName: store,
+      storeUrl: toStoreUrl(store),
+      detailUrl: `#/registro/${id}`,
+    });
   }
+
+  let counter = out.length;
+
+  while (out.length < n) {
+    const eventType = _pick(kinds);
+    const store = _pick(stores);
+    const roll = Math.random();
+    const result = roll < 0.56 ? "W" : roll < 0.68 ? "T" : "L";
+    const id = `mm_${counter}`;
+    out.push({
+      id,
+      date: _datePast(25),
+      result,
+      eventType,
+      playerDeck: _pick(_DECKS),
+      storeName: store,
+      storeUrl: toStoreUrl(store),
+      detailUrl: `#/registro/${id}`,
+    });
+    counter += 1;
+  }
+
   return out;
 }
 
