@@ -21,6 +21,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `GET /api/live/logs` supports opponent filtering and pagination, returning rows with id, date, deck and result metadata.
   - `GET /api/live/logs` falls back to in-memory scan and sort when `orderBy` index is unavailable.
 
+- Deriva e normaliza metadados de torneio (ID, nome, contagem de rounds) ao salvar e atualizar eventos físicos, propagando os novos campos para agregações e listagens. (`backend/src/physical/routes.js`, `backend/src/physical/aggregates.js`).
+- Adiciona rotina autenticada `POST /api/physical/events/maintenance/backfill-tournaments` para preencher torneios ausentes e recomputar agregados relacionados. (`backend/src/physical/routes.js`).
+- Implementa listagem, detalhe e sugestão de torneios físicos, bem como CRUD completo de rounds por evento. (`backend/src/physical/routes.js`).
+
 ### Frontend
 - `#/tcg-fisico/eventos/loja/:store?` carrega a loja do hash, normaliza o valor selecionado e atualiza a navegação ao trocar a opção, mantendo filtros e ordenação na listagem. (`frontend/src/StoreEventsPage.jsx`).
 - Sanitiza pistas de Pokémon ao montar o detalhe das partidas, evitando duplicatas e normalizando valores antes de exibir ícones. (`frontend/src/pages/PhysicalStoreEventsPage.jsx`, `frontend/src/pages/TCGLivePage.jsx`).
