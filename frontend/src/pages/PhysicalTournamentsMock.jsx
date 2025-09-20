@@ -7,6 +7,7 @@ import {
 } from "../services/physicalApi.js";
 import { prettyDeckKey } from "../services/prettyDeckKey.js";
 import DeckLabel from "../components/DeckLabel.jsx";
+import BackButton from "../components/BackButton.jsx";
 import { subscribePhysicalRoundsChanged } from "../utils/physicalRoundsBus.js";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
@@ -601,7 +602,9 @@ export default function TournamentsLivePage() {
   return (
     <div className="min-h-screen w-full bg-zinc-950 text-zinc-100">
       <div className="mx-auto max-w-7xl px-4 py-6">
-        <header className="mb-6">
+        <BackButton href="#/tcg-fisico" label="Voltar ao TCG Físico" />
+
+        <header className="mb-6 mt-2">
           <h1 className="text-2xl font-semibold tracking-tight">
             <a href={BASE_HASH} className="hover:underline">Torneios — TCG Físico</a>
           </h1>
