@@ -189,4 +189,41 @@ describe('home routes GET /home', () => {
       wr: 0
     });
   });
+
+  it('orders decks with equal win rate by total games', async () => {
+    decksDocs.splice(
+      0,
+      decksDocs.length,
+      {
+        deckKey: 'deck-higher-total',
+        counts: { W: 6, L: 3, T: 0 },
+        wr: 66.7,
+        pokemons: ['mew']
+      },
+      {
+        deckKey: 'deck-lower-total',
+        counts: { W: 2, L: 1, T: 0 },
+        wr: 66.7,
+        pokemons: ['mewtwo']
+      }
+    );
+
+    const handler = getHomeHandler();
+    const req = { query: { source: 'physical', limit: '5' } };
+    const res = createRes();
+
+    await handler(req, res);
+
+    expect(res.body.topDecks.map((d) => d.deckKey)).toEqual([
+      'deck-higher-total',
+      'deck-lower-total'
+    ]);
+
+    expect(res.body.summary.topDeck).toEqual({
+      deckKey: 'deck-higher-total',
+      wr: 66.7,
+      avatars: ['mew'],
+      pokemons: ['mew']
+    });
+  });
 });
