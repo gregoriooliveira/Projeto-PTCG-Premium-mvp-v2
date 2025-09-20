@@ -1391,8 +1391,8 @@ export default function PhysicalStoreEventsPage() {
                   <div className="text-zinc-200">
                     {displayDate}
                   </div>
-                  <div className="text-zinc-300 truncate" title={ev.title || ev.eventType}>
-                    {ev.title || ev.eventType || "—"}
+                  <div className="text-zinc-300 truncate" title={ev.eventType || ev.title || "—"}>
+                    {ev.eventType || ev.title || "—"}
                   </div>
                   <div className="text-zinc-300 truncate" title={storeLabel}>
                     {storeLabel}
