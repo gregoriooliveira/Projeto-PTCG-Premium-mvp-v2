@@ -64,6 +64,59 @@ const TOURNAMENT_TYPE_KEYWORDS = [
   "mundial",
 ];
 
+const TOURNAMENT_TYPE_FILTER_OPTIONS = [
+  {
+    value: "regional",
+    keywords: ["regional", "regional championship", "regional championships"],
+  },
+  {
+    value: "special",
+    keywords: ["special", "special event", "special events"],
+  },
+  {
+    value: "international",
+    keywords: [
+      "international",
+      "international championship",
+      "international championships",
+      "internacional",
+      "internacional championship",
+      "internacional championships",
+    ],
+  },
+  {
+    value: "worlds",
+    keywords: [
+      "worlds",
+      "world championship",
+      "world championships",
+      "mundial",
+      "campeonato mundial",
+    ],
+  },
+];
+
+function normalizeAscii(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function normalizeTournamentTypeFilter(value) {
+  const ascii = normalizeAscii(value);
+  if (!ascii) return null;
+  for (const option of TOURNAMENT_TYPE_FILTER_OPTIONS) {
+    const match = option.keywords.some(
+      (keyword) => ascii === keyword || ascii.includes(keyword),
+    );
+    if (match) return option.value;
+  }
+  return null;
+}
+
 function trimNullable(value) {
   if (value == null) return null;
   const trimmed = String(value).trim();
@@ -1089,16 +1142,42 @@ r.get("/decks", async (req, res) => {
 
 /** Tournaments list */
 r.get("/tournaments", async (req, res) => {
-  const q = (req.query.query || "").toString().toLowerCase();
+  const queryRaw = typeof req.query.query === "string" ? req.query.query.trim() : "";
+  let normalizedQuery = queryRaw.toLowerCase();
+  let typeFilter = normalizeTournamentTypeFilter(req.query.type);
+  if (!typeFilter && queryRaw) {
+    const inferredType = normalizeTournamentTypeFilter(queryRaw);
+    if (inferredType) {
+      typeFilter = inferredType;
+      normalizedQuery = "";
+    }
+  }
   const snap = await db
     .collection("physicalTournamentsAgg")
     .orderBy("dateISO", "desc")
     .limit(50)
     .get();
-  let arr = snap.docs.map(d => d.data());
-  if (q) arr = arr.filter(t => (t.name||"").toLowerCase().includes(q) || (t.tournamentId||"").toLowerCase().includes(q));
+  let arr = snap.docs.map((d) => d.data());
+  if (normalizedQuery) {
+    arr = arr.filter((t) => {
+      const name = String(t.name || "").toLowerCase();
+      const tournamentId = String(t.tournamentId || "").toLowerCase();
+      const limitlessId = String(t.limitlessId || "").toLowerCase();
+      return (
+        name.includes(normalizedQuery) ||
+        tournamentId.includes(normalizedQuery) ||
+        limitlessId.includes(normalizedQuery)
+      );
+    });
+  }
+  if (typeFilter) {
+    arr = arr.filter((t) => {
+      const candidate = t?.format || t?.eventType || t?.type;
+      return normalizeTournamentTypeFilter(candidate) === typeFilter;
+    });
+  }
   // Sort by date desc
-  arr.sort((a,b)=> String(b.dateISO).localeCompare(String(a.dateISO)));
+  arr.sort((a, b) => String(b.dateISO).localeCompare(String(a.dateISO)));
   res.json(arr);
 });
 

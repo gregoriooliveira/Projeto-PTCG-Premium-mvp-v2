@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
   listPhysicalTournaments,
@@ -11,6 +11,108 @@ import { subscribePhysicalRoundsChanged } from "../utils/physicalRoundsBus.js";
 
 const API = import.meta.env.VITE_API_BASE_URL || "";
 const BASE_HASH = "#/tcg-fisico/torneios";
+
+const TOURNAMENT_TYPE_OPTIONS = [
+  {
+    value: "regional",
+    label: "Regional",
+    keywords: ["regional", "regional championship", "regional championships"],
+  },
+  {
+    value: "special",
+    label: "Special Event",
+    keywords: ["special", "special event", "special events"],
+  },
+  {
+    value: "international",
+    label: "International",
+    keywords: [
+      "international",
+      "international championship",
+      "international championships",
+      "internacional",
+      "internacional championship",
+      "internacional championships",
+    ],
+  },
+  {
+    value: "worlds",
+    label: "Worlds",
+    keywords: [
+      "worlds",
+      "world championship",
+      "world championships",
+      "mundial",
+      "campeonato mundial",
+    ],
+  },
+];
+
+const normalizeAscii = (value) =>
+  typeof value === "string"
+    ? value
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .trim()
+    : "";
+
+const normalizeTypeFilter = (value) => {
+  const ascii = normalizeAscii(value);
+  if (!ascii) return null;
+  for (const option of TOURNAMENT_TYPE_OPTIONS) {
+    if (option.keywords.some((keyword) => ascii === keyword || ascii.includes(keyword))) {
+      return option.value;
+    }
+  }
+  return null;
+};
+
+const getTypeLabel = (value) => {
+  const normalized = normalizeTypeFilter(value);
+  if (!normalized) return "";
+  const option = TOURNAMENT_TYPE_OPTIONS.find((item) => item.value === normalized);
+  return option ? option.label : "";
+};
+
+const buildSearchParams = (queryValue, typeValue) => {
+  const normalizedType = normalizeTypeFilter(typeValue);
+  const normalizedQuery = typeof queryValue === "string" ? queryValue.trim() : "";
+  return {
+    query: normalizedType ? "" : normalizedQuery,
+    type: normalizedType,
+  };
+};
+
+const buildHashFromSearch = (queryValue, typeValue) => {
+  try {
+    const params = new URLSearchParams();
+    const normalizedType = normalizeTypeFilter(typeValue);
+    const normalizedQuery = typeof queryValue === "string" ? queryValue.trim() : "";
+    if (normalizedQuery) params.set("query", normalizedQuery);
+    if (normalizedType) params.set("type", getTypeLabel(normalizedType));
+    const search = params.toString();
+    return `${BASE_HASH}${search ? `?${search}` : ""}`;
+  } catch {
+    return BASE_HASH;
+  }
+};
+
+const normalizeSearchPayload = (params) => {
+  if (typeof params === "string") return buildSearchParams(params, null);
+  if (params && typeof params === "object") {
+    const queryCandidate =
+      params.query != null ? params.query : params.q != null ? params.q : "";
+    const typeCandidate =
+      params.type != null
+        ? params.type
+        : params.typeFilter != null
+          ? params.typeFilter
+          : null;
+    return buildSearchParams(queryCandidate, typeCandidate);
+  }
+  return buildSearchParams("", null);
+};
 
 // ===== Helpers =====
 const WR = (w = 0, l = 0, t = 0) => {
@@ -157,16 +259,21 @@ const normalizeRound = (round, index = 0) => {
   };
 };
 
-const fetchPhysicalTournaments = async (query = "") => {
-  const normalizedQuery = typeof query === "string" ? query.trim() : "";
+const fetchPhysicalTournaments = async (params = {}) => {
+  const search = normalizeSearchPayload(params);
   const mapEntries = (payload) => safeArray(payload).map(normalizeTournament).filter(Boolean);
   try {
-    const payload = await listPhysicalTournaments(normalizedQuery);
+    const payload = await listPhysicalTournaments(search);
     const arr = mapEntries(payload);
     if (arr.length) return arr;
   } catch {}
-  const suffix = normalizedQuery ? `?query=${encodeURIComponent(normalizedQuery)}` : "";
-  const fallback = await tryJson(`${API}/api/physical/tournaments${suffix}`);
+  const usp = new URLSearchParams();
+  if (search.query) usp.set("query", search.query);
+  if (search.type) usp.set("type", search.type);
+  const suffix = usp.toString();
+  const fallback = await tryJson(
+    `${API}/api/physical/tournaments${suffix ? `?${suffix}` : ""}`,
+  );
   return mapEntries(fallback);
 };
 
@@ -185,21 +292,33 @@ const fetchPhysicalTournamentRounds = async (id) => {
   return mapRounds(fallback?.rounds ?? fallback?.tournament ?? fallback);
 };
 
-function getQueryFromHash() {
+function getSearchFromHash() {
   try {
     const h = window.location.hash || "";
-    if (!h.startsWith(BASE_HASH)) return "";
+    if (!h.startsWith(BASE_HASH)) return { query: "", type: null };
     const q = h.includes("?") ? h.split("?")[1] : "";
     const usp = new URLSearchParams(q);
-    return usp.get("query") || "";
+    const queryRaw = usp.get("query") || "";
+    const typeRaw = usp.get("type");
+    const normalizedQuery = typeof queryRaw === "string" ? queryRaw.trim() : "";
+    const normalizedTypeFromParam = normalizeTypeFilter(typeRaw);
+    if (normalizedTypeFromParam) {
+      return { query: "", type: normalizedTypeFromParam };
+    }
+    const normalizedTypeFromQuery = normalizeTypeFilter(normalizedQuery);
+    if (normalizedTypeFromQuery) {
+      return { query: "", type: normalizedTypeFromQuery };
+    }
+    return { query: normalizedQuery, type: null };
   } catch {
-    return "";
+    return { query: "", type: null };
   }
 }
 
 // ===== Página principal =====
 export default function TournamentsLivePage() {
   const [q, setQ] = useState("");
+  const [typeFilter, setTypeFilter] = useState(null);
   const [status, setStatus] = useState("todos");
   const [format, setFormat] = useState("todos");
 
@@ -212,10 +331,23 @@ export default function TournamentsLivePage() {
   const [openId, setOpenId] = useState(null);
   const [openRounds, setOpenRounds] = useState({});
 
-  const runSearch = useCallback(async (query = "") => {
+  const ignoreHashChangeRef = useRef(false);
+
+  const syncHash = useCallback((queryValue, typeValue) => {
+    try {
+      const nextHash = buildHashFromSearch(queryValue, typeValue);
+      const currentHash = window.location.hash || "";
+      if (nextHash !== currentHash) {
+        ignoreHashChangeRef.current = true;
+        window.location.hash = nextHash;
+      }
+    } catch {}
+  }, [syncHash]);
+
+  const runSearch = useCallback(async (searchParams = {}) => {
     try {
       setLoading(true);
-      const data = await fetchPhysicalTournaments(query);
+      const data = await fetchPhysicalTournaments(searchParams);
       setRows(Array.isArray(data) ? data : []);
     } catch {
       setRows([]);
@@ -236,10 +368,10 @@ export default function TournamentsLivePage() {
 
   useEffect(() => {
     let cancelled = false;
-    const apply = async (query) => {
+    const apply = async (searchParams) => {
       try {
         setLoading(true);
-        const data = await fetchPhysicalTournaments(query);
+        const data = await fetchPhysicalTournaments(searchParams);
         if (!cancelled) setRows(Array.isArray(data) ? data : []);
       } catch {
         if (!cancelled) setRows([]);
@@ -247,24 +379,32 @@ export default function TournamentsLivePage() {
         if (!cancelled) setLoading(false);
       }
     };
-    const initial = getQueryFromHash();
-    if (initial) {
-      setQ(initial);
-      apply(initial);
-    } else {
-      apply("");
-    }
+    const initial = getSearchFromHash();
+    setTypeFilter(initial.type);
+    const initialInput = initial.query || (initial.type ? getTypeLabel(initial.type) : "");
+    setQ(initialInput);
+    apply(initial);
+    syncHash(initial.query, initial.type);
     const onHash = () => {
-      const q2 = getQueryFromHash();
-      setQ(q2);
-      apply(q2);
+      if (ignoreHashChangeRef.current) {
+        ignoreHashChangeRef.current = false;
+        return;
+      }
+      const next = getSearchFromHash();
+      setTypeFilter(next.type);
+      const nextInput = next.query || (next.type ? getTypeLabel(next.type) : "");
+      setQ(nextInput);
+      setSuggestionsOpen(false);
+      setSuggestions([]);
+      apply(next);
+      syncHash(next.query, next.type);
     };
     window.addEventListener("hashchange", onHash);
     return () => {
       cancelled = true;
       window.removeEventListener("hashchange", onHash);
     };
-  }, []);
+  }, [syncHash]);
 
   useEffect(() => {
     const unsubscribe = subscribePhysicalRoundsChanged(async (eventId) => {
@@ -287,7 +427,7 @@ export default function TournamentsLivePage() {
         return next;
       });
 
-      await runSearch(q);
+      await runSearch(buildSearchParams(q, typeFilter));
 
       if (!openId) return;
 
@@ -308,48 +448,61 @@ export default function TournamentsLivePage() {
     return () => {
       unsubscribe();
     };
-  }, [openId, q, runSearch]);
+  }, [openId, q, runSearch, typeFilter]);
 
   async function onChangeQuery(e) {
-    const v = e.target.value;
-    setQ(v);
-    const trimmed = v.trim();
-    const shouldOpen = trimmed.length >= 2;
+    const rawValue = e.target.value;
+    const trimmed = rawValue.trim();
+    const detectedType = normalizeTypeFilter(trimmed);
+    const displayValue = detectedType ? getTypeLabel(detectedType) : rawValue;
+    setQ(displayValue);
+    setTypeFilter(detectedType);
+    const shouldOpen = !detectedType && trimmed.length >= 2;
     setSuggestionsOpen(shouldOpen);
     if (shouldOpen) {
       try {
         const payload = await suggestPhysicalTournaments(trimmed);
         const normalized = safeArray(payload).map(normalizeTournament).filter(Boolean);
-        const list = normalized.length ? normalized : await fetchPhysicalTournaments(trimmed);
+        const list = normalized.length
+          ? normalized
+          : await fetchPhysicalTournaments({ query: trimmed });
         setSuggestions(buildSuggestionList(list));
       } catch {
-        const fallbackList = await fetchPhysicalTournaments(trimmed);
+        const fallbackList = await fetchPhysicalTournaments({ query: trimmed });
         setSuggestions(buildSuggestionList(fallbackList));
       }
     } else {
       setSuggestions([]);
     }
-    await runSearch(v);
+    const searchParams = buildSearchParams(displayValue, detectedType);
+    await runSearch(searchParams);
+    syncHash(searchParams.query, searchParams.type);
   }
 
   async function selectSuggestion(s) {
     const v = s?.name || s?.id || "";
     setQ(v);
+    setTypeFilter(null);
     setSuggestionsOpen(false);
     setSuggestions([]);
-    await runSearch(v);
-    try {
-      window.location.hash = v ? `${BASE_HASH}?query=${encodeURIComponent(v)}` : BASE_HASH;
-    } catch {}
+    const searchParams = buildSearchParams(v, null);
+    await runSearch(searchParams);
+    syncHash(searchParams.query, searchParams.type);
   }
 
   const filtered = useMemo(() => {
     let arr = [...rows];
+    if (typeFilter) {
+      arr = arr.filter((t) => {
+        const rawType = t?.format || t?.eventType || t?.type;
+        return normalizeTypeFilter(rawType) === typeFilter;
+      });
+    }
     if (status !== "todos") { arr = arr.filter(() => true); }
     if (format !== "todos") { arr = arr.filter(() => true); }
     arr.sort((a,b)=> String(b.dateISO || b.date || "").localeCompare(String(a.dateISO || a.date || "")));
     return arr;
-  }, [rows, status, format]);
+  }, [rows, status, format, typeFilter]);
 
   const aggregates = useMemo(() => {
     const a = filtered.reduce((acc, t) => {
