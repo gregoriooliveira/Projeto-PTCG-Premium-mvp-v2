@@ -117,6 +117,53 @@ Principais rotas para eventos do TCG Físico (espelham as de Live):
 - `GET    /api/physical/events` — Lista os eventos físicos mais recentes (parâmetro `limit` opcional).
 - `GET    /api/physical/events/:eventId/rounds` — Lista os rounds cadastrados para um evento.
 - `POST   /api/physical/events/:eventId/rounds` — Registra um round para o evento e atualiza estatísticas.
+- `PATCH  /api/physical/events/:eventId/rounds/:roundId` — Atualiza um round existente e força o recálculo das métricas do evento.
+  ```http
+  PATCH /api/physical/events/evt_123/rounds/rnd_456
+  Content-Type: application/json
+
+  {
+    "number": 2,
+    "opponent": "Gary",
+    "g1": { "order": 1, "result": "V" }
+  }
+
+  HTTP/1.1 200 OK
+  Content-Type: application/json
+
+  {
+    "id": "rnd_456",
+    "number": 2,
+    "result": "W",
+    "opponent": "Gary",
+    "g1": { "order": 1, "result": "V" },
+    "g2": { "order": 2, "result": "D" },
+    "g3": { "order": 3, "result": "V" }
+  }
+  ```
+- `DELETE /api/physical/events/:eventId/rounds/:roundId` — Remove um round e sincroniza os resumos agregados do evento.
+  ```http
+  DELETE /api/physical/events/evt_123/rounds/rnd_456
+
+  HTTP/1.1 200 OK
+  Content-Type: application/json
+
+  { "ok": true }
+  ```
+- `POST   /api/physical/events/maintenance/backfill-tournaments` — Executa uma varredura para preencher campos de torneio ausentes e recomputar agregações relevantes.
+  ```http
+  POST /api/physical/events/maintenance/backfill-tournaments
+
+  HTTP/1.1 200 OK
+  Content-Type: application/json
+
+  {
+    "ok": true,
+    "processed": 120,
+    "updated": 18,
+    "tournaments": ["lc-2024-xyz", "regional-sp-2023"]
+  }
+  ```
 - `GET    /api/physical/summary?limitDays=5` — Entrega um resumo agregado (dias, decks, torneios, oponentes e logs recentes).
 - `GET    /api/physical/days/:date` — Mostra os eventos e o resumo de vitórias/derrotas de um dia específico.
 - `GET    /api/physical/decks` — Retorna agregações por deck (`deck` opcional para filtrar por chave normalizada).
