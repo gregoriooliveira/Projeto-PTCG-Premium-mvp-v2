@@ -42,7 +42,7 @@ export default function DeckLabel({
           key={idx}
           src={src}
           alt=""
-          className="h-[18px] w-[18px] rounded-full ring-1 ring-zinc-800/60 object-cover shrink-0"
+          className="h-[40px] w-[40px] rounded-full ring-1 ring-zinc-800/60 object-cover shrink-0"
           loading="lazy"
           decoding="async"
         />
